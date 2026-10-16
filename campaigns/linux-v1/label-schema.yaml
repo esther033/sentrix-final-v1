@@ -1,0 +1,113 @@
+schema_version: 1
+campaign_id: linux-v1
+purpose: case and window ground-truth contract
+
+case_labels:
+  required:
+    - campaign_id
+    - case_id
+    - pair_id
+    - fault_run_id
+    - control_run_id
+    - repetition
+    - fault_type
+    - target_kind
+    - target_node_or_edge
+    - requested_severity
+    - observed_effect
+    - data_valid
+    - injection_valid
+    - impact_confirmed
+    - recovery_observable
+    - recovery_status
+  target_kind_values:
+    - service_node
+    - dependency_edge
+    - workload_entrypoint
+  target_encoding:
+    service_node: graph node index resolved from topology snapshot
+    dependency_edge: directed source node index plus destination node index
+    workload_entrypoint: external workload node to frontend edge
+  fixed_service_label_enum: false
+
+timestamps:
+  required:
+    - run_started_at
+    - injection_requested_at
+    - injection_observed_at
+    - effect_observed_at
+    - removal_observed_at
+    - recovery_confirmed_at
+    - run_finished_at
+  use_as_model_features: false
+  use_for_window_label_generation_only: true
+
+windowing:
+  length_seconds: 30
+  stride_seconds: 10
+  interval_convention: half_open_start_inclusive_end_exclusive
+  cross_boundary_rule: transition_excluded
+  lifecycle_labels:
+    warmup:
+      primary_training: exclude
+      reason: cold start and telemetry stabilization
+    baseline:
+      primary_training: normal
+    injection_transition:
+      interval: injection_observed_at through first complete 30-second window after effect_observed_at
+      primary_training: exclude
+    fault_active:
+      interval: after injection_transition through removal_observed_at
+      primary_training: conditional
+    recovering:
+      interval: removal_observed_at through recovery_confirmed_at
+      primary_training: exclude_from_normal
+    recovered:
+      interval: after recovery_confirmed_at when recovery criterion holds for two consecutive windows
+      primary_training: normal
+    cooldown:
+      primary_training: normal_only_if_recovered_else_exclude
+
+task_labels:
+  impact_detection:
+    positive_rule: fault_active window from a data-valid, injection-valid, impact-confirmed case
+    negative_rule: baseline or recovered window from an accepted fault or control run
+    no_impact_fault_window: exclude_from_primary_and_tag_injection_valid_no_impact
+  root_cause_localization:
+    formulation: rank every graph node and directed edge with shared weights
+    eligible_rule: data_valid and injection_valid and impact_confirmed and lifecycle_label=fault_active
+    node_target: one positive node; all other observable nodes are candidates, not fixed classes
+    edge_target: one positive directed edge; all other observable edges are candidates, not fixed classes
+  fault_type_classification:
+    eligible_rule: data_valid and injection_valid and lifecycle_label=fault_active
+    no_impact_reporting: separate stratum
+  recovery_detection:
+    positive_state: recovered
+    censored_rule: if recovery is not confirmed before run end, retain right-censored case and do not invent recovery time
+
+no_impact_policy:
+  retain_in_dataset: true
+  primary_impact_detection_positive: false
+  primary_rca_training: false
+  allowed_uses:
+    - injection effect calibration
+    - false-positive analysis
+    - fault-type auxiliary analysis when local effect evidence exists
+  reporting:
+    - impact-confirmed performance
+    - no-impact stratum behavior
+    - impact confirmation rate by fault type and target
+
+new_service_policy:
+  inference_output: anomaly or root-cause score for each node, not a service-name softmax class
+  unseen_node_allowed: true
+  retraining_required_for_new_node_identity: false
+  conditions:
+    - compatible feature schema
+    - healthy local baseline
+    - observed topology edges
+  caveats:
+    - an unseen fault type is not automatically supported
+    - runtime or exporter distribution shift can require recalibration or fine-tuning
+    - out-of-distribution detection may abstain instead of returning a forced ranking
+

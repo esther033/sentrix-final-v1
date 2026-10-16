@@ -1,0 +1,95 @@
+schema_version: 1
+campaign_id: linux-v1
+purpose: leakage and drift controlled collection/evaluation schedule
+
+pre_campaign_gates:
+  - validate Linux CPU cgroup and netem behavior
+  - add and verify required metrics in feature-schema.yaml
+  - run one CPU pair and one network pair
+  - verify at least six metric samples per 30-second window at five-second scrape interval
+  - measure impact confirmation rate before freezing fault intensity
+  - freeze schemas, workload definition, capacity C, and fault parameters
+
+schedule:
+  generation_seed: required_and_saved
+  unit: matched_pair
+  block_randomize_by:
+    - fault_type
+    - target
+    - repetition
+  pair_order:
+    strategy: counterbalanced
+    orders:
+      - control_then_fault
+      - fault_then_control
+    balance_within:
+      - fault_type
+      - target
+  onset:
+    candidates_seconds_from_run_start: [420, 480, 540, 600, 660, 720]
+    assignment: balanced_random_without_using_outcomes
+    matched_control: identical sham onset and phase lengths
+  time_distribution:
+    rule: repetitions 1, 2, and 3 are interleaved across collection days
+    forbidden: collecting all repetition 1 first and all repetition 3 last
+  reset:
+    required_between_every_run: true
+    checks:
+      - no active Chaos object
+      - all application and telemetry pods ready
+      - resource and qdisc state restored
+      - telemetry backends healthy
+      - environment fingerprint recorded
+
+evaluation:
+  protocol: rotating grouped 3-fold cross-validation
+  folds:
+    - fold: 1
+      test_repetition: 1
+      train_repetitions: [2, 3]
+    - fold: 2
+      test_repetition: 2
+      train_repetitions: [1, 3]
+    - fold: 3
+      test_repetition: 3
+      train_repetitions: [1, 2]
+  validation_policy: no outcome-driven tuning inside the 69-case corpus
+  hyperparameter_policy: freeze using legacy or dedicated pilot data before opening cross-validation results
+  aggregation:
+    - produce exactly one out-of-fold prediction for every accepted case
+    - compute detection and ranking metrics at case level
+    - report fold mean and standard deviation
+    - bootstrap confidence intervals by case or matched pair, never by window
+  primary_metrics:
+    impact_detection: [AUROC, AUPRC, sensitivity_at_fixed_false_positive_rate]
+    node_or_edge_ranking: [MRR, HitAt1, HitAt3]
+    fault_type: [macro_f1, balanced_accuracy]
+
+generalization_tests:
+  unseen_service:
+    protocol: leave_one_service_out
+    applicable_faults: [cpu_saturation, pod_failure]
+    requirement: shared node scorer with no service identity feature
+  unseen_edge:
+    protocol: leave_one_dependency_edge_out
+    applicable_faults: [network_delay, packet_loss]
+    requirement: shared directed-edge scorer
+  interpretation: evaluates unseen location within known telemetry schema and known fault families
+
+known_limitations:
+  - three repetitions per cell support exploratory cross-validation but still yield wide cell-level uncertainty
+  - CPU, delay, and loss use one frozen severity in the core corpus
+  - benign deployment and restart confounders are not included in linux-v1
+  - only five of the application services are fault targets
+  - a new fault family or incompatible runtime telemetry is out of scope
+
+implementation_blockers_before_collection:
+  - scripts/run-matched-pair.py currently runs control first and must support the saved pair order
+  - profile generation must support saved onset offsets and matched dynamic phase lengths
+  - model builder must enforce feature-schema forbidden fields and log filters
+
+
+# Status 2026-10-16 (setup v2, see docs/SETUP-REVIEW-20261016.md): the first two
+# blockers are implemented offline (run-matched-pair.py --pair-order +
+# evaluate-pair.py; generate-campaign.py writes onset/phase-matched profiles).
+# The model builder blocker remains open and needs collected data.

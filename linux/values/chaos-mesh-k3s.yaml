@@ -1,0 +1,7 @@
+# Overlay on deploy/chaos-mesh/values-minimal.yaml for k3s. k3s ships its own
+# containerd with the socket under /run/k3s, not /run/containerd. A wrong
+# socket does not fail the install; it fails the first injection
+# ("expected docker:// but got container..."), so linux/capability/ must pass.
+chaosDaemon:
+  runtime: containerd
+  socketPath: /run/k3s/containerd/containerd.sock

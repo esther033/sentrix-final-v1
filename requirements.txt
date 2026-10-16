@@ -1,0 +1,5 @@
+# Imports used by scripts/, smoke/, recorder/, identity/, tests/ (checked by grep of import lines).
+# Pinned to versions with wheels for Python 3.10-3.13 (Ubuntu 22.04 / 24.04).
+PyYAML==6.0.2
+pandas==2.2.3
+pyarrow==18.1.0

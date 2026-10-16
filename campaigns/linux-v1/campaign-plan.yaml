@@ -1,0 +1,158 @@
+schema_version: 1
+campaign_id: linux-v1
+purpose: production RCA core corpus
+environment_cohort: linux-kubernetes-containerd
+excluded_faults:
+  - memory_saturation
+  - disk_io
+  - socket_exhaustion
+exclusion_reason: require new injectors, effect metrics, and a separate schema-frozen campaign
+
+case_definition:
+  one_fault_case: one fault run plus one independently collected matched control run
+  fault_cases: 69
+  control_runs: 69
+  total_runs: 138
+  legacy_m2_included: false
+
+protocol:
+  duration_seconds: 1500
+  warmup_seconds: 180
+  intervention_seconds: 300
+  cooldown_seconds: 120
+  intervention_onset_candidates_seconds: [420, 480, 540, 600, 660, 720]
+  baseline_seconds_rule: onset_offset_seconds - warmup_seconds
+  recovery_seconds_rule: duration_seconds - onset_offset_seconds - intervention_seconds - cooldown_seconds
+  minimum_baseline_seconds: 240
+  minimum_recovery_seconds: 360
+  onset_assignment: pre-generated and balanced across fault type, target, repetition, and pair order
+  control_sham_rule: matched control uses the same onset offset and phase lengths as its fault run
+  replica_count: 1
+  hpa_enabled: false
+
+splits:
+  evaluation_protocol: rotating_grouped_3_fold_cross_validation
+  fold_1_test_repetition: 1
+  fold_2_test_repetition: 2
+  fold_3_test_repetition: 3
+  grouping_rule: keep each fault run, matched control, and all derived windows in the same fold
+  tuning_rule: freeze model family and hyperparameters using only legacy or dedicated pilot data before cross-validation
+  reporting: out-of-fold case-level metrics with fold mean, standard deviation, and case-level bootstrap confidence intervals
+  time_rule: repetitions and folds are interleaved across the full campaign; fold identity must not encode collection date
+
+execution_randomization:
+  schedule_seed_required: true
+  block_factors: [fault_type, target, repetition]
+  pair_order: counterbalanced
+  allowed_pair_orders: [control_then_fault, fault_then_control]
+  reset_and_health_gate_between_runs: true
+
+service_targets:
+  - checkoutservice
+  - productcatalogservice
+  - currencyservice
+  - recommendationservice
+  - paymentservice
+
+edge_targets:
+  - id: front-product
+    source: frontend
+    destination: productcatalogservice
+  - id: front-currency
+    source: frontend
+    destination: currencyservice
+  - id: front-recommendation
+    source: frontend
+    destination: recommendationservice
+  - id: recommendation-product
+    source: recommendationservice
+    destination: productcatalogservice
+  - id: checkout-payment
+    source: checkoutservice
+    destination: paymentservice
+
+matrix:
+  - fault_type: cpu_saturation
+    target_axis: service_targets
+    targets: 5
+    repetitions: 3
+    fault_cases: 15
+    template: deploy/chaos-mesh/faults/cpu-saturation.yaml
+    calibration_start:
+      workers: 1
+      load_percent: 100
+      duration_seconds: 300
+  - fault_type: pod_failure
+    target_axis: service_targets
+    targets: 5
+    repetitions: 3
+    fault_cases: 15
+    template: deploy/chaos-mesh/faults/pod-failure.yaml
+    calibration_start:
+      action: pod-failure
+      duration_seconds: 300
+  - fault_type: network_delay
+    target_axis: edge_targets
+    targets: 5
+    repetitions: 3
+    fault_cases: 15
+    template: deploy/chaos-mesh/faults/network-delay.yaml
+    calibration_start:
+      latency: 100ms
+      jitter: 10ms
+      duration_seconds: 300
+  - fault_type: packet_loss
+    target_axis: edge_targets
+    targets: 5
+    repetitions: 3
+    fault_cases: 15
+    template: deploy/chaos-mesh/faults/packet-loss.yaml
+    calibration_start:
+      random_loss_percent: 2
+      duration_seconds: 300
+  - fault_type: traffic_surge
+    target_axis: calibrated_load_levels
+    targets: 3
+    repetitions: 3
+    fault_cases: 9
+    baseline_offered_rate: 0.4C
+    levels:
+      - id: l1
+        offered_rate: 0.6C
+      - id: l2
+        offered_rate: 0.8C
+      - id: l3
+        offered_rate: 1.0C
+
+naming:
+  fault_run: linux-v1-<fault>-<target>-r<01..03>
+  control_run: linux-v1-control-<fault>-<target>-r<01..03>
+  pair_id: linux-v1-<fault>-<target>-r<01..03>
+
+storage:
+  run_root: runs/<run-id>
+  profile_root: workload/profiles/linux-v1
+  authoritative_view_pointer: pipeline-v2.json
+  raw_formats: [json, ndjson, yaml]
+  canonical_format: parquet
+  model_format: parquet
+
+acceptance:
+  require_data_valid: true
+  require_injection_valid: true
+  require_impact_confirmed: false
+  require_fault_removal_confirmed: true
+  require_pipeline_complete: true
+  primary_rca_requires_impact_confirmed: true
+  no_impact_policy: retain as a separate injection-valid stratum; exclude from primary impact detection and RCA positive training
+
+model_contract:
+  localization_output: shared node and edge anomaly ranking
+  fixed_service_classification_head: forbidden
+  service_identity_as_feature: forbidden
+  supports_unseen_service_node: conditional on compatible telemetry, healthy baseline, and graph edges
+  schemas:
+    feature: campaigns/linux-v1/feature-schema.yaml
+    label: campaigns/linux-v1/label-schema.yaml
+    execution: campaigns/linux-v1/execution-plan.yaml
+

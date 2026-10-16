@@ -1,0 +1,15 @@
+# Overlay on deploy/tempo/values-minimal.yaml (3h retention, 3Gi PVC, 3Gi
+# memory limit, OOM history on Docker Desktop).
+tempo:
+  retention: 48h
+  resources:
+    requests:
+      cpu: 250m
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 6Gi
+persistence:
+  enabled: true
+  size: 40Gi
+  storageClassName: local-path

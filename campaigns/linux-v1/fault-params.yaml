@@ -1,0 +1,52 @@
+# Fault and load parameters consumed by scripts/generate-campaign.py.
+#
+# status: draft  -> calibration-start values from campaign-plan.yaml. Profiles
+#                   generated from a draft file are marked
+#                   "calibration_status": "draft" and run-campaign.py refuses
+#                   to execute them as the formal campaign.
+# status: frozen -> set ONLY after the Linux capability + calibration runs
+#                   (handoff/linux-v1/TEAMMATE-PROMPT.md section D). Record the
+#                   calibration run IDs that justified each value. Never edit a
+#                   frozen file mid-campaign; start a new campaign ID instead.
+schema_version: 1
+campaign_id: linux-v1
+status: draft
+frozen_at: null
+calibration_evidence: []   # e.g. [calib-linux-v1-cpu-checkoutservice-001, ...]
+
+# Sustainable capacity C in user transactions/s (not HTTP RPS, not gRPC calls).
+# Measured by linux/calibration/capacity-sweep.sh. null until measured.
+capacity_tps: null
+load_fractions:
+  baseline: 0.4
+  surge_levels:
+    l1: 0.6
+    l2: 0.8
+    l3: 1.0
+
+faults:
+  cpu_saturation:
+    template: deploy/chaos-mesh/faults/cpu-saturation.yaml
+    params: {}          # template currently fixes workers=1, load=100
+  pod_failure:
+    template: deploy/chaos-mesh/faults/pod-failure.yaml
+    params: {}
+  network_delay:
+    template: deploy/chaos-mesh/faults/network-delay.yaml
+    params:
+      LATENCY: 100ms
+      JITTER: 10ms
+  packet_loss:
+    template: deploy/chaos-mesh/faults/packet-loss.yaml
+    params:
+      LOSS_PERCENT: "2"
+  traffic_surge:
+    template: null
+    params: {}
+
+workload:
+  time_unit: 1s
+  pre_allocated_vus: 15
+  max_vus: 80
+  stage_timeout: 5s
+  trace_workers: 2

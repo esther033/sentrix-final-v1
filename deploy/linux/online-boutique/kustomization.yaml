@@ -1,0 +1,20 @@
+# Linux (k3s) overlay: everything from deploy/online-boutique (OTLP env,
+# resource limits, built-in loadgenerator at 0 replicas) plus a fixed NodePort
+# for the frontend, so k6 reaches it without kubectl port-forward.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../online-boutique
+patches:
+  - patch: |
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: frontend-external
+        namespace: sentrix
+      spec:
+        type: NodePort
+        ports:
+          - name: http
+            port: 80
+            nodePort: 30080

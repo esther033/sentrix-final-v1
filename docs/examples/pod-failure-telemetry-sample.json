@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "sample_kind": "human_readable_extract_from_canonical_view",
+  "run_id": "m2-pod-failure-checkoutservice-005",
+  "incident_id": "inc-m2-pod-failure-checkoutservice-005",
+  "fault": {
+    "type": "pod_failure",
+    "root_cause_service": "checkoutservice",
+    "started_at": "2026-09-26T08:27:31.505381Z",
+    "ended_at": "2026-09-26T08:32:30.393369Z"
+  },
+  "metric_example": {
+    "telemetry_source": "metrics",
+    "timestamp_unix": 1790411253.15,
+    "canonical_service_id": "checkoutservice",
+    "metric_group": "spanmetrics_calls_rate",
+    "metric_name": "spanmetrics_calls_rate",
+    "value": 1.2000480019,
+    "selected_labels": {
+      "service_name": "checkoutservice",
+      "service_namespace": "sentrix",
+      "span_kind": "SPAN_KIND_CLIENT",
+      "span_name": "hipstershop.ShippingService/GetQuote",
+      "status_code": "STATUS_CODE_UNSET",
+      "k8s_pod_name": "checkoutservice-74dd7db7cb-zv46k",
+      "k8s_pod_uid": "cb547f28-1878-444d-9fe0-8509965bc0da"
+    }
+  },
+  "log_example": {
+    "telemetry_source": "logs",
+    "timestamp_unix_nano": 1790411248900424275,
+    "canonical_service_id": "checkoutservice",
+    "message": {
+      "message": "[PlaceOrder] user_id=\"2f596880-f952-49ee-80ca-f2e5c4c52b85\" user_currency=\"USD\"",
+      "severity": "info",
+      "timestamp": "2026-09-26T08:27:28.900179394Z"
+    },
+    "selected_labels": {
+      "service_name": "checkoutservice",
+      "service_namespace": "sentrix",
+      "k8s_container_name": "server",
+      "k8s_pod_name": "checkoutservice-74dd7db7cb-zv46k",
+      "k8s_pod_uid": "cb547f28-1878-444d-9fe0-8509965bc0da",
+      "detected_level": "info"
+    }
+  },
+  "trace_example": {
+    "telemetry_source": "traces",
+    "trace_id": "b17e7a5ca047f2f2891bf44b163c8c22",
+    "span_id": "136d167f01fced0b",
+    "parent_span_id": "3b39b22299dcccbd",
+    "canonical_service_id": "checkoutservice",
+    "span_name": "hipstershop.CheckoutService/PlaceOrder",
+    "span_kind": "SPAN_KIND_SERVER",
+    "start_time_unix_nano": 1790411244860815146,
+    "end_time_unix_nano": 1790411244877780825,
+    "duration_ms": 16.965679,
+    "timestamp_valid": true,
+    "attributes": {
+      "rpc.system": "grpc",
+      "rpc.service": "hipstershop.CheckoutService",
+      "rpc.method": "PlaceOrder",
+      "rpc.grpc.status_code": 0,
+      "net.sock.peer.addr": "10.244.0.19",
+      "net.sock.peer.port": 42622
+    },
+    "resource": {
+      "service.name": "checkoutservice",
+      "service.namespace": "sentrix",
+      "service.version": "v0.9.0",
+      "k8s.namespace.name": "sentrix",
+      "k8s.pod.name": "checkoutservice-74dd7db7cb-zv46k",
+      "k8s.pod.uid": "cb547f28-1878-444d-9fe0-8509965bc0da",
+      "k8s.container.name": "server"
+    }
+  },
+  "notes": [
+    "The three records are real canonical records sampled near fault onset, but they are not asserted to belong to one causal request.",
+    "selected_labels is a readable subset; the canonical Parquet rows retain the full labels_json/resource JSON.",
+    "Raw metrics and traces are JSON, logs are NDJSON, and canonical/RE2-compatible views are Parquet."
+  ]
+}

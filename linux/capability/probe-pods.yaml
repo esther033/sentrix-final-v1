@@ -1,0 +1,73 @@
+# Dedicated capability-probe workloads (TEAMMATE-PROMPT B.2, LINUX-DATA-COLLECTION-PLAN 3).
+# Separate namespace: no qdisc or stress is ever applied to application pods
+# or to the host while proving that the injectors work.
+#   probe-src -> probe-dst : the edge under test
+#   probe-src -> probe-other: must stay unaffected (filter scope)
+#   probe-cpu              : 500m CPU limit, same as the app services
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sentrix-probe
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: probe-src, namespace: sentrix-probe}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: probe-src}}
+  template:
+    metadata: {labels: {app: probe-src}}
+    spec:
+      containers:
+        - name: main
+          image: __NETSHOOT__
+          command: ["sleep", "infinity"]
+          resources: {requests: {cpu: 50m, memory: 32Mi}, limits: {cpu: 500m, memory: 128Mi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: probe-dst, namespace: sentrix-probe}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: probe-dst}}
+  template:
+    metadata: {labels: {app: probe-dst}}
+    spec:
+      containers:
+        - name: main
+          image: __NETSHOOT__
+          command: ["sleep", "infinity"]
+          resources: {requests: {cpu: 50m, memory: 32Mi}, limits: {cpu: 500m, memory: 128Mi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: probe-other, namespace: sentrix-probe}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: probe-other}}
+  template:
+    metadata: {labels: {app: probe-other}}
+    spec:
+      containers:
+        - name: main
+          image: __NETSHOOT__
+          command: ["sleep", "infinity"]
+          resources: {requests: {cpu: 50m, memory: 32Mi}, limits: {cpu: 500m, memory: 128Mi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: probe-cpu, namespace: sentrix-probe}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: probe-cpu}}
+  template:
+    metadata: {labels: {app: probe-cpu}}
+    spec:
+      containers:
+        - name: main
+          image: __BUSYBOX__
+          command: ["sh", "-c", "while true; do sleep 3600; done"]
+          readinessProbe:
+            exec: {command: ["true"]}
+            periodSeconds: 2
+          resources: {requests: {cpu: 100m, memory: 32Mi}, limits: {cpu: 500m, memory: 128Mi}}

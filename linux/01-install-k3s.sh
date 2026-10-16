@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Single-node k3s (containerd) for the linux-v1 cohort. Needs sudo.
+# - pinned K3S_VERSION from config/versions.env
+# - traefik and servicelb disabled (frontend-external must not grab host :80;
+#   services are exposed as fixed NodePorts by 04-deploy-stack.sh)
+# - sch_netem loaded now and at boot (NetworkChaos delay/loss)
+# - inotify limits raised (OTel filelog + many pods)
+# Re-running is safe: an existing k3s of the same version is left alone.
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$HERE/config/versions.env"
+
+if command -v k3s >/dev/null 2>&1; then
+  have="$(k3s --version | awk 'NR==1 {print $3}')"
+  if [ "$have" = "$K3S_VERSION" ]; then echo "k3s $have already installed"; else
+    echo "k3s $have installed but $K3S_VERSION pinned. Not changing it automatically." >&2
+    echo "Either set K3S_VERSION=$have in config/versions.env (and record why) or uninstall k3s first." >&2
+    exit 1
+  fi
+else
+  EXTRA=""
+  if awk 'NR>1 {found=1} END {exit !found}' /proc/swaps; then EXTRA="--kubelet-arg=fail-swap-on=false"; fi
+  curl -sfL https://get.k3s.io | sudo env INSTALL_K3S_VERSION="$K3S_VERSION" \
+    INSTALL_K3S_EXEC="server --disable traefik --disable servicelb --write-kubeconfig-mode 600 $EXTRA" sh -
+fi
+
+sudo modprobe sch_netem
+echo sch_netem | sudo tee /etc/modules-load.d/sentrix-netem.conf >/dev/null
+sudo tee /etc/sysctl.d/90-sentrix.conf >/dev/null <<'EOF'
+fs.inotify.max_user_instances = 1024
+fs.inotify.max_user_watches = 1048576
+EOF
+sudo sysctl --system >/dev/null
+
+mkdir -p "$HOME/.kube"
+sudo cat /etc/rancher/k3s/k3s.yaml > "$HOME/.kube/config.k3s.tmp"
+chmod 600 "$HOME/.kube/config.k3s.tmp"
+if [ -f "$HOME/.kube/config" ] && ! cmp -s "$HOME/.kube/config" "$HOME/.kube/config.k3s.tmp"; then
+  cp "$HOME/.kube/config" "$HOME/.kube/config.backup-$(date -u +%Y%m%dT%H%M%SZ)"
+fi
+mv "$HOME/.kube/config.k3s.tmp" "$HOME/.kube/config"
+
+# kubectl ships inside k3s; expose it without sudo.
+mkdir -p "$HOME/.local/bin"
+ln -sf "$(command -v k3s)" "$HOME/.local/bin/kubectl"
+
+echo "Waiting for the node to be Ready..."
+"$HOME/.local/bin/kubectl" wait --for=condition=Ready node --all --timeout=180s
+"$HOME/.local/bin/kubectl" get nodes -o wide
+echo "containerd socket for Chaos Mesh: /run/k3s/containerd/containerd.sock"
+sudo test -S /run/k3s/containerd/containerd.sock && echo "  present" || { echo "  MISSING: fix linux/values/chaos-mesh-k3s.yaml socketPath" >&2; exit 1; }

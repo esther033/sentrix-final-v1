@@ -1,0 +1,153 @@
+schema_version: 1
+campaign_id: linux-v1
+purpose: leakage-controlled model feature contract
+
+sampling:
+  prometheus_scrape_interval_seconds: 5
+  model_window_seconds: 30
+  model_stride_seconds: 10
+  minimum_metric_samples_per_window: 4
+  expected_metric_samples_per_window: 6
+  boundary_window_rule: exclude any window crossing a lifecycle boundary
+  trace_quantiles:
+    p50_min_span_count: 5
+    p90_min_span_count: 20
+    p99_min_span_count: 100
+    insufficient_count_rule: null_with_mask
+
+normalization:
+  local_baseline:
+    source_phase: baseline
+    method: per-node-or-edge robust delta using median and IQR
+    fallback_for_zero_iqr: absolute delta with missing indicator
+    future_samples_allowed: false
+  model_scaler:
+    method: robust scaler
+    fit_scope: training folds only
+    artifact: datasets/linux-v1/normalization-train.json
+
+node_features:
+  - name: cpu_usage_limit_ratio
+    unit: ratio
+    required: true
+  - name: cpu_throttled_seconds_rate
+    unit: seconds_per_second
+    required: true
+  - name: cpu_throttled_period_ratio
+    unit: ratio
+    required: true
+  - name: memory_working_set_limit_ratio
+    unit: ratio
+    required: true
+  - name: request_or_span_rate
+    unit: per_second
+    required: true
+  - name: error_rate
+    unit: ratio
+    required: true
+  - name: latency_p50
+    unit: seconds
+    required: true
+  - name: latency_p90
+    unit: seconds
+    required: true
+  - name: latency_p99
+    unit: seconds
+    required: false
+  - name: pod_ready_fraction
+    unit: ratio
+    required: true
+  - name: container_restart_delta
+    unit: count
+    required: true
+
+edge_features:
+  - name: call_rate
+    unit: per_second
+    required: true
+  - name: error_rate
+    unit: ratio
+    required: true
+  - name: latency_p50
+    unit: seconds
+    required: true
+  - name: latency_p90
+    unit: seconds
+    required: true
+  - name: packet_drop_ratio
+    unit: ratio
+    required_for_faults: [network_delay, packet_loss]
+  - name: tcp_retransmission_rate
+    unit: per_second
+    required_for_faults: [network_delay, packet_loss]
+  - name: measured_rtt
+    unit: seconds
+    required_for_faults: [network_delay, packet_loss]
+
+log_features:
+  primary_representation:
+    - severity_count
+    - sanitized_template_count
+    - trace_correlated_error_count
+  template_vocabulary_fit_scope: training folds only
+  redact_service_names: true
+  exclude_if_source_or_message_matches:
+    - chaos-mesh
+    - StressChaos
+    - NetworkChaos
+    - PodChaos
+    - stress-ng
+    - fault-name
+    - injected-manifest
+
+trace_features:
+  representation: directed service graph aggregated per window
+  node_and_edge_weights_shared: true
+  raw_trace_id_as_feature: false
+  raw_span_id_as_feature: false
+
+missingness:
+  emit_observed_mask: true
+  distinguish:
+    - observed
+    - missing
+    - forward_filled
+    - insufficient_sample_count
+  imputation_fit_scope: training folds only
+
+forbidden_features:
+  - service_name
+  - service_numeric_id_embedding
+  - pod_uid
+  - container_id
+  - pod_name
+  - instance_name
+  - chaos_resource_name
+  - fault_type_ground_truth
+  - target_ground_truth
+  - absolute_timestamp
+  - run_elapsed_seconds
+  - phase_name
+  - intervention_onset_offset
+  - run_id
+  - pair_id
+  - repetition
+  - fold_id
+
+qa_only_not_model_input:
+  - events.parquet
+  - fault-record.json
+  - injected-manifest.yaml
+  - environment-before.json
+  - environment-after.json
+  - quality-report.json
+  - run-assessment-v2.json
+
+unseen_service_contract:
+  required_inputs:
+    - same canonical node feature schema
+    - at least one directed topology edge
+    - healthy pre-fault baseline window
+  identity_handling: node index is structural only and has no learned service-specific embedding
+  incompatible_telemetry_rule: abstain_or_recalibrate; do not silently map missing runtime signals to zero
+
