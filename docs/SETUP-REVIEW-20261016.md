@@ -176,3 +176,22 @@
 - 판단: 유휴 상태에서는 여유가 크다. 실제 위험 구간은 부하(k6) + fault + Tempo/Prometheus export가 겹칠 때이므로 capacity sweep과 시험 pair에서 Tempo·Prometheus·paymentservice/currencyservice 사용률과 OOMKilled를 다시 측정한다.
 
 **디스크.** root 파티션(= `/var/lib/rancher`) 사용 22G → 26G(+4 GiB, 이미지·PVC 초기화), 여유 841G. PVC: Prometheus 20Gi, Tempo 30Gi, Loki 15Gi (local-path, Bound). PVC 실제 사용량은 root 소유 디렉터리라 sudo 없이 측정하지 않았다.
+
+### 7.11 3단계 실측 (capability gate, 2026-10-16)
+판정 기준(`linux/capability/judge.py`)은 바꾸지 않았다.
+
+**1차 실행** (`linux/out/capability-20261016T070430Z/`, 로그 `linux/out/capability-run-20261016T070430Z.log`): cpu PASS, network PASS, **pod FAIL**. pod 디렉터리가 비어 있고 probe.log에 메시지도 없었다. 원인은 스크립트 버그: `pod.sh`의 `ready()`가 kubectl jsonpath 출력(끝 줄바꿈 없음)을 내고, `read -r UID0 R0 < <(ready)`는 값은 읽지만 EOF에서 1을 반환해 `lib.sh`의 `set -e`가 스크립트를 첫 줄에서 조용히 종료시켰다(`bash -c 'set -e; read -r A B < <(printf "x true")'`로 재현). 즉 주입이 시도조차 되지 않았고 Chaos 객체도 남지 않았다. 수정: `ready()` 끝에 `echo` 추가. 다른 `read` 사용처(network.sh)는 python print라 줄바꿈이 있어 해당 없음.
+
+**2차 실행 (수정 후 전체 재실행)** — `linux/out/capability-20261016T071128Z/`, 로그 `linux/out/capability-run-20261016T071128Z.log`, run-all exit 0, 세 probe 모두 PASS.
+- cpu: 사용량 전 0.0027 → 중 0.4999 → 후 0.0027 core(30 s 평균), `nr_throttled` 증가 160(중), 0(전·후), `cpu.max` `50000 100000` 불변. 1차도 0.4999 core / 증가 300으로 같은 결과.
+- pod: UID 전후 동일 `0f51718f-…1d49`, Ready true → false(07:13:53~07:14:14) → true, AllRecovered=True, Apply 07:13:16 / Recover 07:14:16 Succeeded.
+- network: delay 100 ms — RTT 전 0.069 → 중 100.131 → 후 0.070 ms, 다른 경로 0.064 → 0.080 ms; loss 10% — 손실 11.33 %(300 ping), 다른 경로 0 %, 제거 후 0 %; qdisc는 delay·loss 후 모두 주입 전과 동일(주입 중 prio + netem `delay 100ms` 확인). 1차 loss는 8.67 %.
+
+**여유·안정성 표시**
+- delay: +100 ms로 기준(+80 ms)보다 20 ms 여유, 다른 경로 영향 0.02 ms. 여유 충분.
+- loss: 8.67 %(1차) / 11.33 %(2차). 300 패킷에서 10 % 손실의 표준편차가 약 1.7 %p라 예상 범위 안이고 기준 4 %보다 충분히 크다. 다만 캠페인 강도 판단에는 300 패킷 한 번의 값이 ±3 %p 흔들린다는 점을 고려한다.
+- **pod-failure 효과 지연(주의):** AllInjected(07:13:16) 후 Ready=false까지 약 31 s, unready 구간은 60 s duration 중 약 21~24 s뿐이었다. 이벤트 순서: `Killing: Container main definition changed`(07:13:16) → 기존 컨테이너 종료 대기 → `Pulling gcr.io/google-containers/pause:latest`(07:13:47, 4.5 s) → 생성 실패·BackOff(의도된 pod-failure 상태) → Recover(07:14:16). 지연의 대부분은 probe 컨테이너(busybox `sh -c` PID 1이 SIGTERM을 무시)가 terminationGracePeriod 30 s를 다 채운 것이고, 첫 주입 때만 pause 이미지 pull(gcr.io, `latest` 태그)이 더해졌다. 앱에서는 terminationGracePeriodSeconds가 서비스마다 다르다(adservice·cartservice·currencyservice·emailservice·paymentservice·productcatalogservice·recommendationservice 5 s, checkoutservice·frontend·shippingservice·redis-cart 30 s). 따라서 pod_failure 실제 onset은 주입 요청보다 최대 수십 초 늦을 수 있으므로, 시험 pair와 라벨링에서는 요청 시각이 아니라 관측된 Ready=false 시각(kube_pod_container_status_ready)을 onset으로 확인해야 한다. pause 이미지는 이제 노드에 있다.
+
+**정리·영향 확인.** `kubectl delete ns sentrix-probe` 완료, 남은 Chaos 객체 없음. `sentrix` Pod 18개 모두 Running/Ready, 재시작 0, startTime 배포 시각 그대로(영향 없음). 정리 후 05-verify 재실행 endpoint·series 12개 PASS(`linux/out/deploy-20261016T071951Z/`).
+
+**메모리(실행 중 1분 간격, `linux/out/capability-mem-20261016T071128Z.log`, 1차는 `…070430Z.log`):** 노드 사용 최대 7425Mi(47 %, 2차) / 7294Mi(46 %, 1차), available 최저 8715 MiB(2차) / 9352 MiB(1차), swap 사용 0. 정리 후 7016Mi, available 9170 MiB.

@@ -6,7 +6,9 @@
 D="$OUT/pod"; mkdir -p "$D"
 trap cleanup_chaos EXIT
 ensure_probes
-ready() { kubectl -n $NS get pod -l app=probe-cpu -o jsonpath='{.items[0].metadata.uid} {.items[0].status.containerStatuses[0].ready}'; }
+# Trailing echo: jsonpath prints no newline, `read` then returns 1 at EOF and
+# set -e (lib.sh) silently killed this script before any injection (206-40).
+ready() { kubectl -n $NS get pod -l app=probe-cpu -o jsonpath='{.items[0].metadata.uid} {.items[0].status.containerStatuses[0].ready}'; echo; }
 read -r UID0 R0 < <(ready)
 cat > "$D/manifest.yaml" <<YAML
 apiVersion: chaos-mesh.org/v1alpha1
