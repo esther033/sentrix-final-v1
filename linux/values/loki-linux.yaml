@@ -15,3 +15,14 @@ singleBinary:
     enabled: true
     size: 15Gi
     storageClass: local-path
+# 206-40 memory reduction (approved 2026-10-16). Keys checked against the
+# loki-7.3.0 chart: resultsCache is enabled by default and renders a memcached
+# StatefulSet with request = limit = allocatedMemory*1.2 = 1229Mi; it only
+# caches query results (chunksCache is already off for the same reason). With
+# both caches off no memcached/memcached-exporter Pod is rendered. The rules
+# sidecar (no resources set) only loads ruler ConfigMaps, which are unused.
+resultsCache:
+  enabled: false
+sidecar:
+  rules:
+    enabled: false

@@ -40,9 +40,16 @@ if [ -f "$HOME/.kube/config" ] && ! cmp -s "$HOME/.kube/config" "$HOME/.kube/con
 fi
 mv "$HOME/.kube/config.k3s.tmp" "$HOME/.kube/config"
 
-# kubectl ships inside k3s; expose it without sudo.
+# kubectl ships inside k3s; expose it without sudo. A plain symlink is not
+# enough: k3s's kubectl ignores ~/.kube/config and reads the root-only
+# /etc/rancher/k3s/k3s.yaml whenever KUBECONFIG is unset (206-40), so the
+# wrapper supplies the same default as config/versions.env. rm first: writing
+# through an old symlink would target the root-owned k3s binary.
 mkdir -p "$HOME/.local/bin"
-ln -sf "$(command -v k3s)" "$HOME/.local/bin/kubectl"
+rm -f "$HOME/.local/bin/kubectl"
+printf '#!/bin/sh\nexport KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"\nexec %s kubectl "$@"\n' \
+  "$(command -v k3s)" > "$HOME/.local/bin/kubectl"
+chmod 755 "$HOME/.local/bin/kubectl"
 
 echo "Waiting for the node to be Ready..."
 "$HOME/.local/bin/kubectl" wait --for=condition=Ready node --all --timeout=180s

@@ -129,3 +129,30 @@
 ### 7.7 테스트
 - `tests/test_school_pc.py` 15개 추가. 전체 89개 통과(기존 74 + 15).
 - 이 PC에는 pip/python3-venv가 없어 `.venv`를 만들 수 없었다. 테스트는 requirements.txt와 같은 버전의 wheel(PyYAML 6.0.2, pandas 2.2.3, pyarrow 18.1.0와 의존성)을 PyPI sha256으로 확인해 임시 디렉터리에 풀고 `PYTHONPATH`로만 실행했다. 시스템에는 설치하지 않았다. 정식 `.venv`는 `python3-venv` 설치 후 `linux/03-python-env.sh`로 만든다.
+
+### 7.8 1단계 실측 (k3s 설치, 2026-10-16)
+사람이 일반 터미널에서 `sudo -v`, `sudo apt-get install -y python3-venv`, `sudo loginctl enable-linger cloudman`, `bash linux/01-install-k3s.sh`를 실행했다. 01 스크립트의 종료 상태는 사람의 터미널에만 있어 직접 보지 못했으나, 마지막 단계까지의 산출물이 모두 확인됐다.
+- k3s `v1.33.4+k3s1 (148243c4)`, systemd `k3s` active/enabled. ExecStart: `--disable traefik --disable servicelb --write-kubeconfig-mode 600 --kubelet-arg=fail-swap-on=false`.
+- 노드 `206-40` Ready, containerd `2.0.5-k3s2`, kernel 7.0.0-31-generic, INTERNAL-IP 10.198.138.150. kube-system: coredns, local-path-provisioner, metrics-server.
+- `sch_netem` 로드됨, `/etc/modules-load.d/sentrix-netem.conf` = `sch_netem`. inotify `max_user_instances=1024`, `max_user_watches=1048576` (`/etc/sysctl.d/90-sentrix.conf`).
+- containerd socket `/run/k3s/containerd/containerd.sock` 존재 = `linux/values/chaos-mesh-k3s.yaml`의 `socketPath`.
+- k3s 데이터 `/var/lib/rancher` (root 파티션, 여유 846 GiB). 데이터 위치 이동 불필요.
+- `/usr/local/bin/k3s` sha256 `10da34c3…1400` = 공식 `sha256sum-amd64.txt`.
+
+**수정: kubectl wrapper.** 01은 `~/.local/bin/kubectl`을 k3s 심볼릭 링크로 만들었는데, k3s 내장 kubectl은 `~/.kube/config`가 있어도 KUBECONFIG가 없으면 `/etc/rancher/k3s/k3s.yaml`(root 0600)을 읽어 `permission denied`로 실패했다(재현). k3s 설치기가 만든 `/usr/local/bin/kubectl`도 같다. `01-install-k3s.sh`가 심볼릭 링크 대신 `KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"`를 넣고 `k3s kubectl`을 exec하는 wrapper를 쓰도록 바꾸고, 같은 블록을 이 PC에 sudo 없이 적용했다. 이제 KUBECONFIG 없이 `kubectl get nodes`가 동작한다. 주의: PATH에서 `~/.local/bin`이 `/usr/local/bin`보다 앞에 있어야 한다(이 PC 기본 PATH는 그렇다; 스크립트들은 직접 앞에 붙인다). wrapper를 쓰기 전에 기존 링크를 `rm`하는 이유: 링크를 통해 쓰면 root 소유 k3s 바이너리를 대상으로 하게 된다(이 작업 중 한 번 그렇게 시도됐고 권한으로 거부되어 바이너리는 위 sha256 그대로다).
+
+**02·03.** `linux/02-install-cli.sh`: helm `v3.17.3+ge4da497`(sha256 확인), k6 `v0.57.0 (commit/50afd82c18)`. `linux/03-python-env.sh`: `.venv` Python 3.12.3, PyYAML 6.0.2 / pandas 2.2.3 / pyarrow 18.1.0, 테스트 89개 통과, ResourceWarning 0건. pip freeze: `linux/out/pip-freeze-20261016T060814Z.txt`.
+
+### 7.9 메모리 축소 적용 (승인 2026-10-16)
+7.4의 후보 1~4를 적용했다. 앱 서비스 limit은 그대로다. values key는 차트 tgz의 values/templates에서 확인했다.
+- `linux/values/loki-linux.yaml`: `resultsCache.enabled: false`(memcached StatefulSet 1229Mi 제거; chunksCache도 이미 꺼져 있어 memcached-exporter도 렌더링되지 않음), `sidecar.rules.enabled: false`(limit 없는 rules sidecar 제거).
+- `linux/values/chaos-mesh-k3s.yaml`: `dnsServer.create: false`(chaos-dns-server Deployment 제거).
+- `linux/values/prometheus-linux.yaml`: `configmapReload.prometheus.resources` 16Mi/64Mi, `kube-state-metrics.resources` 64Mi/128Mi.
+
+적용 후 합계 — 이번에는 고정 버전 차트 tgz(5개 모두 helm repo index의 digest와 sha256 일치)를 `helm template`으로 실제 렌더링하고 Online Boutique는 `kubectl kustomize`로 렌더링해, Deployment/StatefulSet/DaemonSet의 컨테이너 메모리를 합산했다(증거: `linux/out/render-20261016/memory-sum.txt`, git 제외).
+- 앱·관측·Chaos Mesh: request 4834Mi (4.72 GiB), limit 10274Mi (10.03 GiB). memory limit 없는 컨테이너 0개. memcached·chaos-dns-server·rules sidecar는 렌더링 결과에 없음.
+- k3s kube-system 실측(설치된 Deployment): coredns 70Mi/170Mi, metrics-server 70Mi/limit 없음, local-path-provisioner 미설정.
+- 전체: **request 4974Mi ≈ 4.86 GiB (이전 6.0), limit 10444Mi ≈ 10.20 GiB (이전 11.2) + metrics-server·local-path 무제한**.
+- 판단: request는 사용 가능 메모리(k3s 기동 후 약 10 GiB) 안에 여유 있게 들어간다. limit 합계 10.2 GiB에 Pod 밖 k3s/containerd·k6·export(약 1~2 GiB 추정)를 더하면 최악의 경우 여전히 사용 가능량을 약간 넘는다. 실제 사용량은 04 배포 후 `kubectl top pod -A`와 `kubectl describe node`로 측정해 판단한다.
+
+참고(04 배포 대비): `grafana/tempo` 1.24.4 차트는 `deprecated: true`로 표시된다(버전 고정이라 동작에는 영향 없음, legacy cohort와 같은 차트). 또 이 PC에서 GitHub release asset(차트 tgz) 다운로드가 헤더 응답까지 90~260초 걸려 `helm pull`이 기본 타임아웃(30초)으로 반복 실패했고 curl(`-m 400`)로는 받아졌다. `04-deploy-stack.sh`의 `helm upgrade --install`도 같은 이유로 실패할 수 있으므로, 실패하면 차트를 미리 받아 로컬 tgz로 설치하는 방식을 검토한다.

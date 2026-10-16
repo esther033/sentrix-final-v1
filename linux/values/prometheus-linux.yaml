@@ -19,3 +19,23 @@ server:
     limits:
       cpu: "2"
       memory: 2Gi
+# 206-40 memory reduction (approved 2026-10-16): the chart leaves these
+# containers unbounded (prometheus-29.30.0: configmapReload.prometheus.resources
+# and the kube-state-metrics subchart's resources are {}).
+configmapReload:
+  prometheus:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi

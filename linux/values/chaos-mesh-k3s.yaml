@@ -5,3 +5,8 @@
 chaosDaemon:
   runtime: containerd
   socketPath: /run/k3s/containerd/containerd.sock
+# 206-40 memory reduction (approved 2026-10-16): chaos-mesh-2.7.2 creates the
+# chaos-dns-server Deployment by default (request 70Mi, no limit). It only
+# serves DNSChaos, which linux-v1 does not use.
+dnsServer:
+  create: false
