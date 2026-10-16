@@ -156,3 +156,23 @@
 - 판단: request는 사용 가능 메모리(k3s 기동 후 약 10 GiB) 안에 여유 있게 들어간다. limit 합계 10.2 GiB에 Pod 밖 k3s/containerd·k6·export(약 1~2 GiB 추정)를 더하면 최악의 경우 여전히 사용 가능량을 약간 넘는다. 실제 사용량은 04 배포 후 `kubectl top pod -A`와 `kubectl describe node`로 측정해 판단한다.
 
 참고(04 배포 대비): `grafana/tempo` 1.24.4 차트는 `deprecated: true`로 표시된다(버전 고정이라 동작에는 영향 없음, legacy cohort와 같은 차트). 또 이 PC에서 GitHub release asset(차트 tgz) 다운로드가 헤더 응답까지 90~260초 걸려 `helm pull`이 기본 타임아웃(30초)으로 반복 실패했고 curl(`-m 400`)로는 받아졌다. `04-deploy-stack.sh`의 `helm upgrade --install`도 같은 이유로 실패할 수 있으므로, 실패하면 차트를 미리 받아 로컬 tgz로 설치하는 방식을 검토한다.
+
+### 7.10 2단계 실측 (스택 배포·검증, 2026-10-16)
+**차트 캐시.** `linux/fetch-charts.sh`(신규)가 `versions.env`의 차트 5개를 각 저장소 `index.yaml`에서 URL·digest를 찾아 curl(`--retry 5 --retry-all-errors --max-time 900`)로 `linux/charts/`에 받고 sha256을 index digest와 비교한다. 이유: 1단계에서 GitHub release asset이 응답까지 90~260초 걸려 helm 자체 30초 HTTP 타임아웃으로 반복 실패했다. 이번 다운로드는 loki 1 s, tempo 31 s, prometheus 30 s, otel 1 s, chaos-mesh 0 s — 5개 모두 MATCH(로그 `linux/out/fetch-charts-20261016T063700Z.log`). 속도가 시간대마다 크게 달라 캐시가 필요하다. `linux/charts/`는 `.gitignore`(용량·재배포). `04-deploy-stack.sh`는 `linux/charts/<name>-<ver>.tgz`가 있으면 그 파일로, 없을 때만 저장소에서 설치하고, `helm --wait`와 앱 `rollout status` 타임아웃을 30m로 늘렸다(HDD·이미지 다운로드).
+
+**배포.** `bash linux/04-deploy-stack.sh` exit 0, 15:38:25 → 15:44:35 (6분 10초). 6개 release 모두 `linux/charts/`의 tgz에서 설치. 로그 `linux/out/deploy-stack-20261016T063825Z.log`, 1분 간격 Pod·이벤트 기록 `linux/out/deploy-watch-20261016T063825Z.log`.
+- 이미지 pull 실패(ErrImagePull/ImagePullBackOff/인증/DNS) 0건. 레지스트리별 pull 시간: gcr.io(Online Boutique 10개) 64~86 s, docker.io redis 70 s, ghcr.io chaos-daemon 67 s / chaos-mesh 7 s, docker.io loki·tempo·nginx·otel 9~15 s, quay.io prometheus·reloader 8~13 s, registry.k8s.io kube-state-metrics 13 s. 느리지만 정상 진행(동시 pull).
+- OOMKilled·CrashLoopBackOff 0건, 재시작 0. 기동 중 일시 경고만: loki/tempo readiness 503(기동 중), otel-daemonset readiness connection refused(기동 중), loki PVC 바인딩 재시도("object has been modified", 자동 해결), metrics-server readiness timeout(이후 `kubectl top` 정상 동작).
+- 참고: Online Boutique의 `redis-cart`는 원본 manifest 그대로 `redis:alpine`(가변 태그)이다. 실제 실행 digest는 image-digests.tsv에 남는다.
+
+**05-verify.** `bash linux/05-verify.sh` exit 0. endpoint 4개(frontend 30080, Prometheus 30090, Tempo 30320, Loki 30310) PASS, Prometheus series 8개 PASS(cpu usage 55, throttled 37, periods 37, ready 19, restarts 19, cpu limits 19, spanmetrics calls 10, tx dropped 18). scrape interval 5s, Prometheus retention 12h 확인. 증거 `linux/out/deploy-20261016T064454Z/`(versions, helm-releases, image-digests.tsv, nodes, storage, endpoints, series). 사소한 점: `scrape-interval.txt`는 API 응답이 한 줄 JSON이라 `grep -m3`가 전체 config를 담는다(값은 확인됨).
+
+**메모리 실측** (모든 Pod Ready 15:44:35, 10분 후 15:54:40, k6 부하 없음 = 유휴 상태; `linux/out/memory-20261016T065440Z/`):
+- `kubectl describe node` Allocated: request 4974Mi (31%), limit 10444Mi (66%) — 7.9의 렌더링 계산과 정확히 일치.
+- `kubectl top nodes`: 6504Mi (41%, 데스크톱 세션 포함 노드 전체). 컨테이너 합계 1085Mi.
+- 상위: prometheus-server 250Mi/2048Mi (12%), loki 126Mi/1024Mi, adservice 80Mi/300Mi, otel gateway 61Mi, otel daemonset 59Mi, metrics-server 56Mi(limit 없음), coredns 51Mi, tempo 51Mi/3072Mi (2%).
+- limit 대비 80% 초과 컨테이너 없음(최대 emailservice 41/128Mi = 32%).
+- `free -m`: available 9425Mi, swap 사용 0.6 MiB.
+- 판단: 유휴 상태에서는 여유가 크다. 실제 위험 구간은 부하(k6) + fault + Tempo/Prometheus export가 겹칠 때이므로 capacity sweep과 시험 pair에서 Tempo·Prometheus·paymentservice/currencyservice 사용률과 OOMKilled를 다시 측정한다.
+
+**디스크.** root 파티션(= `/var/lib/rancher`) 사용 22G → 26G(+4 GiB, 이미지·PVC 초기화), 여유 841G. PVC: Prometheus 20Gi, Tempo 30Gi, Loki 15Gi (local-path, Bound). PVC 실제 사용량은 root 소유 디렉터리라 sudo 없이 측정하지 않았다.

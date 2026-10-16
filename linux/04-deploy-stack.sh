@@ -22,12 +22,19 @@ helm repo update >/dev/null
 
 kubectl apply -f deploy/namespace.yaml
 
+# Charts come from linux/charts/ when present (linux/fetch-charts.sh downloads
+# and digest-checks them): on 206-40 GitHub release assets took 90-260 s to
+# start, beyond helm's own 30 s HTTP timeout. --wait 30m covers image pulls
+# and PVC setup on an HDD.
 install() { # release chart:version namespace values...
   local rel="$1" spec="$2" ns="$3"; shift 3
-  local args=()
+  local args=() name src
   for v in "$@"; do args+=(-f "$v"); done
-  echo "== $rel ($spec) in $ns"
-  helm upgrade --install "$rel" "$(chart "$spec")" --version "$(ver "$spec")" -n "$ns" --create-namespace "${args[@]}" --wait --timeout 15m
+  name="$(chart "$spec")"; name="${name#*/}"
+  src="$HERE/charts/$name-$(ver "$spec").tgz"
+  if [ -s "$src" ]; then args+=("$src"); else args+=("$(chart "$spec")" --version "$(ver "$spec")"); src="repo $(chart "$spec")"; fi
+  echo "== $rel ($spec) in $ns from $src"
+  helm upgrade --install "$rel" "${args[@]}" -n "$ns" --create-namespace --wait --timeout 30m
 }
 
 install loki "$CHART_LOKI" sentrix deploy/loki/values-minimal.yaml linux/values/loki-linux.yaml
@@ -38,7 +45,7 @@ install otel-daemonset "$CHART_OTEL" sentrix deploy/otel-collector/daemonset-val
 install chaos-mesh "$CHART_CHAOS_MESH" chaos-mesh deploy/chaos-mesh/values-minimal.yaml linux/values/chaos-mesh-k3s.yaml
 
 kubectl apply -k deploy/linux/online-boutique
-kubectl -n sentrix rollout status deploy --timeout=15m
+kubectl -n sentrix rollout status deploy --timeout=30m
 
 # Fixed NodePorts (see linux/config/endpoints.env). Strategic merge on `port`.
 kubectl -n sentrix patch svc prometheus-server -p '{"spec":{"type":"NodePort","ports":[{"port":80,"nodePort":30090}]}}'
