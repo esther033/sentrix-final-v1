@@ -195,3 +195,18 @@
 **정리·영향 확인.** `kubectl delete ns sentrix-probe` 완료, 남은 Chaos 객체 없음. `sentrix` Pod 18개 모두 Running/Ready, 재시작 0, startTime 배포 시각 그대로(영향 없음). 정리 후 05-verify 재실행 endpoint·series 12개 PASS(`linux/out/deploy-20261016T071951Z/`).
 
 **메모리(실행 중 1분 간격, `linux/out/capability-mem-20261016T071128Z.log`, 1차는 `…070430Z.log`):** 노드 사용 최대 7425Mi(47 %, 2차) / 7294Mi(46 %, 1차), available 최저 8715 MiB(2차) / 9352 MiB(1차), swap 사용 0. 정리 후 7016Mi, available 9170 MiB.
+
+### 7.12 4단계 (capacity C) — 중단, 미완료 (2026-10-16 17:56 KST)
+PC를 꺼야 해서 sweep을 rate 4 완료 직후 중단했다(tmux 세션 종료, fault 없는 측정이라 클러스터 영향 없음). **C는 아직 결정되지 않았다.** `capacity-sweep.py`는 끝까지 돌아야 `capacity-result.json`을 쓰므로 본 측정의 결과 파일은 없다. 판정 기준은 스크립트 고정값 그대로(성공률 ≥ 99.5 %, p99 ≤ max(500, 3×rate1 p99) = 500 ms, 달성률 90~110 %, dropped ≤ 1 %, assessment valid).
+- 시험(rate 1, 5분): PASS, `runs/_calibration/capacity-20261016t072722/capacity-result.json`. pipeline-v2 complete, quality m1a_overall PASS, run-manifest `host` 기록 확인.
+- 본 측정 `--rates 1,2,3,4,6,8 --minutes 10` (로그 `linux/out/capacity-main-20261016T073629Z.log`): rate 1/2/3/4 모두 PASS — 성공률 100 %, p99 124/156/125/129 ms, dropped 0, 거래 수 603/1204/1803/2403, assessment valid. rate 6 run(`calib-linux-v1-capacity-6p0-20261016t073629`)은 시작 직후 중단되어 미완료로 남겨 두었다(삭제하지 않음, 재측정은 새 stamp/ID).
+- 메모리(1분 간격, `linux/out/capacity-mem-20261016T073629Z.log`): 노드 최대 9411Mi, **swap 최대 471 MiB 사용(이전 단계 0)**, Tempo 최대 2262Mi / limit 3Gi = **74 %**(export 중), Prometheus 최대 440Mi, 재시작·OOMKilled 0.
+- run 크기·후처리 시간(`linux/out/run-footprint.py`, 10분 run):
+  - rate 1: 453 MiB, 후처리 313 s (export 269 s)
+  - rate 2: 864 MiB, 후처리 461 s (export 397 s, canonical 20 s)
+  - rate 3: 1274 MiB, 후처리 701 s (export 539 s, canonical 66 s)
+  - rate 4: 1685 MiB, 후처리 884 s (export 698 s, canonical 95 s)
+  - 크기는 rate에 거의 비례(10분·1 tx/s당 약 410 MiB). 그중 `raw-v2/_export` 체크포인트가 약 49 %(raw traces의 1.6배)를 차지한다.
+- backend: Prometheus `/data` 306 MiB, Tempo `/var/tempo` 9.7 MiB(rate 1 시험 직후, kubectl exec). Loki는 이미지에 셸이 없어 미측정. local-path PVC는 같은 파일시스템이라 kubelet stats가 PVC별 값이 아닌 전체 사용량을 준다.
+
+남은 일(다음 세션): 새 stamp로 sweep 재실행(rate 6, 8까지, 또는 1~8 전체), C·0.4C·surge 계산, 25분 run 크기·export 시간 추정, 138 run 저장량과 일정 재계산. 재부팅 후에는 README 7.5 순서(NTP → Pod Ready → 05-verify)로 확인한다.
