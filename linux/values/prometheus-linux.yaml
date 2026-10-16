@@ -1,12 +1,16 @@
 # Overlay on deploy/prometheus/values-minimal.yaml. Docker Desktop used
 # emptyDir + 6h retention; an unattended campaign needs the raw window to
 # survive a pod restart until export finishes (export deadline: 30 min after
-# each run), so: PVC on k3s local-path + 48h retention.
+# each run), so: PVC on k3s local-path.
+# 206-40 (15 GiB RAM): retention 48h -> 12h and limit 4Gi -> 2Gi. A run is
+# ~25 min and its export finishes within 30 min, so 12h still covers a run
+# plus a long retry. Prometheus memory is mostly the in-memory head block
+# (~2h), so the limit -- not retention -- is what bounds RAM here.
 server:
-  retention: "48h"
+  retention: "12h"
   persistentVolume:
     enabled: true
-    size: 40Gi
+    size: 20Gi
     storageClass: local-path
   resources:
     requests:
@@ -14,4 +18,4 @@ server:
       memory: 1Gi
     limits:
       cpu: "2"
-      memory: 4Gi
+      memory: 2Gi

@@ -19,6 +19,12 @@ from datetime import datetime, timezone
 
 import yaml
 
+from host_state import host_clock
+
+# k3s kubectl reads root-only /etc/rancher/k3s/k3s.yaml when KUBECONFIG is
+# unset; children (kubectl, helper scripts) inherit this default.
+os.environ.setdefault("KUBECONFIG", os.path.expanduser("~/.kube/config"))
+
 ONLINE_BOUTIQUE_SOURCE = {
     "repo": "https://github.com/GoogleCloudPlatform/microservices-demo",
     "ref": "v0.9.0",
@@ -78,6 +84,18 @@ def cluster_info():
     return info
 
 
+def host_block(run_dir, current=None):
+    """Boot identity and NTP state: run start/end as recorded by run-attended.py
+    in runtime.json, plus the state when this manifest was generated."""
+    runtime = {}
+    path = os.path.join(run_dir, "runtime.json")
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            runtime = json.load(f)
+    return {"at_start": runtime.get("host_at_start"), "at_end": runtime.get("host_at_end"),
+            "at_manifest": current if current is not None else host_clock()}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-id", required=True)
@@ -132,6 +150,7 @@ def main():
         "milestone": milestone,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "cluster": cluster_info(),
+        "host": host_block(run_dir),
         "release": {
             "online_boutique": ONLINE_BOUTIQUE_SOURCE,
             "image_digests": image_digests,

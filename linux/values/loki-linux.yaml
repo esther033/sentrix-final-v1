@@ -1,7 +1,8 @@
 # Overlay on deploy/loki/values-minimal.yaml (24h retention, 2Gi PVC).
+# 206-40 (15 GiB RAM): retention 48h -> 12h, limit 2Gi -> 1Gi, PVC 15Gi.
 loki:
   limits_config:
-    retention_period: 48h
+    retention_period: 12h
 singleBinary:
   resources:
     requests:
@@ -9,8 +10,8 @@ singleBinary:
       memory: 512Mi
     limits:
       cpu: "1"
-      memory: 2Gi
+      memory: 1Gi
   persistence:
     enabled: true
-    size: 30Gi
+    size: 15Gi
     storageClass: local-path

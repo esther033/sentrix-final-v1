@@ -62,3 +62,70 @@
 ## 6. RE2 데이터
 
 `rcaeval/download_re2.sh`는 RCAEval 코드가 쓰는 공식 Zenodo URL(record 14590730)에서 RE2-OB/SS/TT를 받는다. `rcaeval/inventory_re2.py`는 받은 파일을 직접 읽어 case 수, 파일 구성, metric/log/trace 컬럼, `inject_time` 형식, sampling 간격, 주입 전후 길이를 표로 만든다. 프로젝트 문서의 Dataset 질문 1~6은 이 결과로 답한다(추측 금지 원칙).
+
+## 7. Linux 실측 수정 (학교 PC 206-40)
+
+대상 PC: 206-40 (Ubuntu 24.04.5, i7-13700 24 vCPU, RAM 15 GiB + swap 4 GiB, HDD 931.5G에 LVM ext4 단일 파티션 — `/`·`/var`·`/home` 공유, 여유 847 GiB, NVMe에는 Windows). 0단계 증거: `linux/out/preflight-206-40-20261016T052659Z/` (수정 전), 수정 후 재실행: `linux/out/preflight-206-40-20261016T054655Z/`. 이 절의 변경은 **코드·문서만** 고쳤고 sudo·k3s 설치·배포는 아직 하지 않았다.
+
+### 7.1 저장소
+- 받은 폴더는 GitHub ZIP(`.git` 없음)이었다. `esther033/sentrix-final-v1`을 clone해 `diff -rq`로 내용이 완전히 같음을 확인한 뒤 그 `.git`을 이 폴더에 붙이고 `school-pc` 브랜치를 만들었다. 이유: 실습 PC 자리를 옮겨도 작업을 잃지 않게 단계마다 push하기 위해.
+
+### 7.2 preflight 버그 (`linux/00-preflight.sh`)
+| 문제 | 실측 | 수정 |
+|---|---|---|
+| curl 실패 시 `-w %{http_code}`가 `000`을 찍고 `|| echo 000`이 또 붙어 `000000` → PASS | 없는 호스트로 재현 | curl 종료코드로 판정, 종료코드를 메시지에 기록 |
+| `sudo -l -n`은 비밀번호가 필요해도 실패하므로 sudo 그룹 소속인데 "no sudo" FAIL | `id`에 `27(sudo)`, `sudo -n`은 "a password is required" | sudo/admin/wheel 그룹 소속이면 WARN "sudo needs password" (실제 비밀번호 확인은 `sudo -v`) |
+| 저장소 경로만 검사, k3s 기본 저장 위치(`/var/lib/rancher`) 미검사 | 205-13은 `/var` 14 GiB | `/var/lib/rancher`(없으면 `/var`) 여유 검사, 저장소와 같은 파일시스템인지 표시 |
+| 듀얼부트 시계 위험 미표시 | wtmp에 부팅 직후 시각이 9시간 앞선 기록(오늘 14:10 부팅이 "23:10", 음수 duration 다수) | `LocalRTC`·`NTPSynchronized`·NTFS 파티션 유무 INFO, 듀얼부트+RTC UTC면 WARN, wtmp 부팅 횟수 INFO |
+| `import venv`는 python3-venv 패키지 없이도 성공 → venv 생성 실패를 못 잡음 | 이 PC는 ensurepip 없음 | `import venv, ensurepip`로 확인 |
+
+수정 후 이 PC 결과: FAIL 0, WARN = RAM 15 GiB, sudo needs password, dual boot RTC, swap, linger=no, python3-venv missing. 외부 접속 6곳은 curl 종료코드 0으로 실제 PASS.
+
+### 7.3 KUBECONFIG
+- k3s 내장 kubectl은 `KUBECONFIG`가 없으면 root 전용 `/etc/rancher/k3s/k3s.yaml`을 읽다 실패한다(205-13). `01-install-k3s.sh`의 `kubectl wait`, `04-deploy-stack.sh`, `linux/capability/*`는 `versions.env`만 읽어서 KUBECONFIG가 비어 있었다.
+- `linux/config/versions.env`에 `export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"`, `endpoints.env`도 같은 기본값(명시적으로 export된 값 우선). `emergency-cleanup.sh`는 versions.env를 읽도록 추가.
+- Python에서 kubectl을 직접 부르는 진입점(`run-campaign.py`, `generate-run-manifest.py`, `run-fault-experiment.py`, `telemetry_export.py` — 마지막은 `run-attended.py`·`run-matched-pair.py`·export 스크립트가 import)에 `os.environ.setdefault("KUBECONFIG", ~/.kube/config)`. 자식 프로세스가 상속한다.
+
+### 7.4 RAM 15 GiB 대응 (`linux/values/*-linux.yaml`)
+- 보존 기간 48h → 12h (Prometheus·Tempo·Loki). run 1개 25분 + export 30분 이내라 12h로도 재시도 여유가 충분하다. Tempo는 비정상 종료 후 WAL replay 양도 줄어든다. Prometheus 메모리는 주로 head block(~2h)이라 retention보다 limit이 RAM을 묶는다.
+- limit/request: Prometheus 2Gi/1Gi, Tempo 3Gi/1.5Gi, Loki 1Gi/512Mi. PVC: 20Gi/30Gi/15Gi.
+- Tempo 3Gi는 legacy cohort에서 2Gi OOM 뒤 정한 값과 같다. 05-verify와 시험 pair에서 OOMKilled를 반드시 확인한다.
+
+메모리 합계 (values + 차트 기본값; Loki 7.3.0, Prometheus 29.30.0, Chaos Mesh 2.7.2 tgz의 values/templates를 직접 읽음, helm 렌더링은 아직 안 함):
+
+| 구성 | request | limit |
+|---|---|---|
+| Online Boutique 11개 (loadgenerator 0) — 변경 안 함 | 1112Mi | 2798Mi |
+| Prometheus server | 1024Mi | 2048Mi |
+| Tempo | 1536Mi | 3072Mi |
+| Loki singleBinary / gateway | 512Mi / 64Mi | 1024Mi / 128Mi |
+| Loki resultsCache memcached (차트 기본 enabled, allocatedMemory 1024 × 1.2) | 1229Mi | 1229Mi |
+| OTel gateway / daemonset | 150Mi / 100Mi | 300Mi / 200Mi |
+| Chaos Mesh controller / daemon / dns-server(차트 기본 create) | 128 / 128 / 70Mi | 256 / 256 / 없음 |
+| k3s coredns / metrics-server | 70 / 70Mi | 170Mi / 없음 |
+| **합계(설정된 값)** | **6193Mi ≈ 6.0 GiB** | **11481Mi ≈ 11.2 GiB** |
+| limit 없음: kube-state-metrics, configmap-reload, Loki rules sidecar, memcached-exporter, local-path-provisioner | — | 미정(실측 필요) |
+| Pod 밖: k3s server+containerd, k6, recorder/export Python | — | 대략 1~2 GiB(추정, 실측 필요) |
+
+판단: request 6.0 GiB는 현재 사용 가능 메모리 약 11 GiB 안에 들어간다. limit 기준 최악은 11.2 GiB + 무제한 컨테이너 + Pod 밖 프로세스 ≈ 13 GiB 이상으로 11 GiB를 넘는다. 모든 컨테이너가 동시에 limit까지 쓰지는 않지만 Tempo export·Prometheus 질의가 겹치는 순간 swap/OOM 위험이 있다. 줄일 후보(제안만, 미적용):
+1. Loki `resultsCache.enabled: false` — 질의 캐시일 뿐이고 기존 values가 같은 이유로 chunksCache를 껐다. −1.2 GiB(request·limit 모두). 가장 효과가 크다.
+2. Chaos Mesh `dnsServer.create: false` — DNSChaos를 쓰지 않음. −70Mi, 무제한 컨테이너 하나 제거.
+3. Loki `sidecar.rules.enabled: false` — ruler 미사용. 무제한 컨테이너 제거.
+4. kube-state-metrics·configmap-reload에 명시적 limit(예: 128Mi/64Mi).
+앱 서비스 limit은 장애 실험 조건이라 바꾸지 않는다. 배포 후 `kubectl describe node`(Allocated resources)와 `kubectl top pod -A`로 실측해 위 표를 갱신한다.
+
+### 7.5 수집 전 시계·부팅 게이트
+- 이 PC는 듀얼부트이고 RTC가 UTC 모드(LocalRTC=no)라 Windows 사용 후 부팅하면 NTP가 맞출 때까지 시계가 +9h다. 그 상태로 run이 시작되면 모든 라벨 타임스탬프가 틀린다.
+- `scripts/host_state.py`: boot_id(`/proc/sys/kernel/random/boot_id`), 부팅 시각(`/proc/stat` btime — NTP 보정 후 값), `timedatectl NTPSynchronized`.
+- `run-attended.py`: NTPSynchronized=yes가 아니면 클러스터에 접근하기 전에, run 디렉터리를 만들지 않고 거부. `runtime.json`에 `host_at_start`/`host_at_end`, 시작·종료 boot_id가 다르면 `errors`에 "host rebooted during run". `generate-run-manifest.py`는 `run-manifest.yaml`의 `host`(at_start/at_end/at_manifest)에 기록.
+- 한계: 재부팅은 보통 run 프로세스 자체를 끝내므로 같은 프로세스 안의 boot_id 비교가 잡는 경우는 드물다. 실제 재부팅 중단은 미완료 audit(queue 정지)로 드러나고, boot_id 기록은 사후 감사용이다.
+
+### 7.6 캠페인 하루 블록 운영 (`scripts/run-campaign.py`)
+- 8/31~10/16 부팅 18회, Linux 최장 연속 가동 약 3.7일, 다른 sudo 사용자 2명 → 100시간 연속 queue는 현실적이지 않아 하루 블록 운영으로 바꿨다.
+- `queue.log`를 `with`로 열어 모든 종료 경로에서 닫는다(ResourceWarning 제거).
+- `--fault-type`(반복 가능, schedule 순서 유지, 오타는 거부), `--stop-before HH:MM`(settle + `--pair-minutes` 95분 안에 끝나지 않으면 새 pair 시작 안 함, 지난 시각이면 다음 날), `--min-free-gib`(기본 20, `runs/`·`/var/lib/rancher` 검사, 부족하면 rc 4), pair 간 gate에 NTP 동기화.
+- 운영 절차·tier 순서·재부팅 복구·일정(약 2.5~3.5주): `linux/README.md` 7절.
+
+### 7.7 테스트
+- `tests/test_school_pc.py` 15개 추가. 전체 89개 통과(기존 74 + 15).
+- 이 PC에는 pip/python3-venv가 없어 `.venv`를 만들 수 없었다. 테스트는 requirements.txt와 같은 버전의 wheel(PyYAML 6.0.2, pandas 2.2.3, pyarrow 18.1.0와 의존성)을 PyPI sha256으로 확인해 임시 디렉터리에 풀고 `PYTHONPATH`로만 실행했다. 시스템에는 설치하지 않았다. 정식 `.venv`는 `python3-venv` 설치 후 `linux/03-python-env.sh`로 만든다.

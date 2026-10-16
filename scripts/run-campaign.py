@@ -11,18 +11,36 @@
 * Create runs/_campaign/<id>/STOP to stop gracefully after the current pair.
 * Draft profiles (fault-params.yaml status != frozen) are refused unless
   --allow-draft is given, which is only for calibration rehearsals.
+
+Daily blocks on a shared, often rebooted machine (206-40):
+* --fault-type limits the queue to some fault types (repeatable; schedule
+  order is kept), e.g. tier 1 = cpu_saturation, network_delay, packet_loss.
+* --stop-before HH:MM (local time) does not start a pair that would not end
+  before the next HH:MM (settle + --pair-minutes, default 95).
+* --min-free-gib (default 20) stops before a pair when runs/ or the k3s data
+  directory has less free space.
+* The between-pair gate also requires NTP synchronization (dual-boot RTC
+  offset right after a boot).
 """
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import time
 
 import yaml
 
+from host_state import ntp_synchronized
+
 ROOT = Path(__file__).resolve().parents[1]
+K3S_DATA = Path("/var/lib/rancher")
+# k3s kubectl reads root-only /etc/rancher/k3s/k3s.yaml when KUBECONFIG is
+# unset; children (kubectl, helper scripts) inherit this default.
+os.environ.setdefault("KUBECONFIG", os.path.expanduser("~/.kube/config"))
 
 
 def now():
@@ -39,6 +57,9 @@ def kubectl_json(*args):
 def gate():
     """Return a list of problems that must block the next pair."""
     problems = []
+    ntp = ntp_synchronized()
+    if ntp != "yes":
+        problems.append(f"NTP not synchronized ({ntp})")
     chaos = kubectl_json("get", "stresschaos,networkchaos,podchaos", "-n", "sentrix")
     for item in chaos["items"]:
         conds = item.get("status", {}).get("conditions", [])
@@ -62,16 +83,60 @@ def pair_status(fault_id):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def main():
+def select_pairs(pairs, only=None, fault_types=None):
+    """Filter by pair ID and fault type, keeping schedule order."""
+    return [p for p in pairs
+            if (not only or p["pair_id"] in only) and (not fault_types or p["fault_type"] in fault_types)]
+
+
+def parse_hhmm(value):
+    try:
+        hour, minute = (int(x) for x in value.split(":"))
+        if not (0 <= hour < 24 and 0 <= minute < 60):
+            raise ValueError
+    except ValueError:
+        raise argparse.ArgumentTypeError("expected HH:MM, got " + repr(value))
+    return hour, minute
+
+
+def next_deadline(hhmm, start):
+    """First local HH:MM after `start` (a block started at 20:00 with 07:00 ends tomorrow)."""
+    deadline = start.replace(hour=hhmm[0], minute=hhmm[1], second=0, microsecond=0)
+    return deadline if deadline > start else deadline + timedelta(days=1)
+
+
+def fits_before(current, deadline, settle_seconds, pair_minutes):
+    return deadline is None or current + timedelta(seconds=settle_seconds, minutes=pair_minutes) <= deadline
+
+
+def low_disk(paths, min_free_gib, usage=shutil.disk_usage):
+    """Return 'path: N GiB free' for every existing path below the threshold."""
+    low = []
+    for path in paths:
+        if Path(path).exists():
+            free = usage(path).free / 2**30
+            if free < min_free_gib:
+                low.append(f"{path}: {free:.1f} GiB free < {min_free_gib} GiB")
+    return low
+
+
+def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--schedule", default=str(ROOT / "campaigns/linux-v1/schedule.json"))
     ap.add_argument("--k6-bin", default="k6")
     ap.add_argument("--settle-seconds", type=int, default=300)
     ap.add_argument("--max-pairs", type=int, help="stop after this many newly executed pairs")
     ap.add_argument("--only", action="append", help="run only these pair IDs (repeatable)")
+    ap.add_argument("--fault-type", action="append", dest="fault_types",
+                    help="run only pairs of this fault type (repeatable, schedule order kept)")
+    ap.add_argument("--stop-before", type=parse_hhmm, metavar="HH:MM",
+                    help="local time; do not start a pair that would not finish before it")
+    ap.add_argument("--pair-minutes", type=int, default=95, help="expected pair duration for --stop-before")
+    ap.add_argument("--min-free-gib", type=float, default=20,
+                    help="stop before a pair when runs/ or the k3s data dir has less free space")
     ap.add_argument("--allow-draft", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     schedule = json.loads(Path(args.schedule).read_text(encoding="utf-8"))
     campaign = schedule["campaign_id"]
     if schedule.get("draft") and not args.allow_draft and not args.dry_run:
@@ -82,14 +147,25 @@ def main():
     decisions_path = state_dir / "decisions.yaml"
     decisions = yaml.safe_load(decisions_path.read_text(encoding="utf-8")) if decisions_path.exists() else {}
     excluded = set((decisions or {}).get("excluded_pairs", []))
-    pairs = [p for p in schedule["pairs"] if not args.only or p["pair_id"] in args.only]
+    known_types = {p["fault_type"] for p in schedule["pairs"]}
+    unknown = sorted(set(args.fault_types or []) - known_types)
+    if unknown:
+        raise SystemExit(f"unknown --fault-type {unknown}; schedule has {sorted(known_types)}")
+    pairs = select_pairs(schedule["pairs"], args.only, args.fault_types)
+    deadline = next_deadline(args.stop_before, datetime.now().astimezone()) if args.stop_before else None
+    with (state_dir / "queue.log").open("a", encoding="utf-8") as log:
+        def note(msg):
+            line = f"{now()} {msg}"
+            print(line, flush=True); log.write(line + "\n"); log.flush()
+
+        if args.fault_types or deadline:
+            note(f"block: fault types={args.fault_types or 'all'} stop-before={deadline.isoformat() if deadline else None} "
+                 f"pairs selected={len(pairs)}")
+        return run_queue(args, pairs, excluded, state_dir, deadline, note)
+
+
+def run_queue(args, pairs, excluded, state_dir, deadline, note):
     executed = 0
-    log = (state_dir / "queue.log").open("a", encoding="utf-8")
-
-    def note(msg):
-        line = f"{now()} {msg}"
-        print(line, flush=True); log.write(line + "\n"); log.flush()
-
     for p in pairs:
         status = pair_status(p["fault_run_id"])
         if p["pair_id"] in excluded:
@@ -111,6 +187,12 @@ def main():
             print(json.dumps({"schedule_index": p["schedule_index"], "pair_id": p["pair_id"], "argv": cmd}))
             executed += 1
             continue
+        if not fits_before(datetime.now().astimezone(), deadline, args.settle_seconds, args.pair_minutes):
+            note(f"stop-before {deadline.isoformat()}: {p['pair_id']} (settle {args.settle_seconds}s + "
+                 f"{args.pair_minutes} min) would not finish in time; exiting"); return 0
+        low = low_disk([ROOT / "runs", K3S_DATA], args.min_free_gib)
+        if low:
+            note("STOP: low disk: " + "; ".join(low)); return 4
         problems = gate()
         if problems:
             note("STOP: pre-pair gate failed: " + "; ".join(problems)); return 3

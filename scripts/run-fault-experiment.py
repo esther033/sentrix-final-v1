@@ -29,6 +29,10 @@ from datetime import datetime, timedelta, timezone
 
 import yaml
 
+# k3s kubectl reads root-only /etc/rancher/k3s/k3s.yaml when KUBECONFIG is
+# unset; children (kubectl, helper scripts) inherit this default.
+os.environ.setdefault("KUBECONFIG", os.path.expanduser("~/.kube/config"))
+
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 
 

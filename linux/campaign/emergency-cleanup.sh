@@ -7,6 +7,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PATH="$HOME/.local/bin:$PATH"
+. "$ROOT/linux/config/versions.env"   # KUBECONFIG default
 OUT="$ROOT/linux/out/emergency-$(date -u +%Y%m%dT%H%M%SZ)"; mkdir -p "$OUT"
 for ns in sentrix sentrix-probe; do
   kubectl -n "$ns" get stresschaos,networkchaos,podchaos -o yaml > "$OUT/chaos-before-$ns.yaml" 2>&1

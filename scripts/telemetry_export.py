@@ -19,6 +19,10 @@ from concurrent.futures import ThreadPoolExecutor
 import urllib.parse
 import urllib.request
 
+# k3s kubectl reads root-only /etc/rancher/k3s/k3s.yaml when KUBECONFIG is
+# unset; children (kubectl, helper scripts) inherit this default.
+os.environ.setdefault("KUBECONFIG", os.path.expanduser("~/.kube/config"))
+
 VERSION = 2
 PROM_EXPRESSIONS = {
     "container_cpu_usage_rate": 'rate(container_cpu_usage_seconds_total{namespace="sentrix"}[60s])',

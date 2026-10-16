@@ -12,6 +12,7 @@ import urllib.request
 import yaml
 
 from evaluation_v2 import seconds, match_control, assess_run
+from host_state import host_clock, require_ntp, reboot_errors
 from telemetry_export import atomic_write, save_json, digest, exclusive_export
 from view_integrity import safe_name
 from workload_evidence import confirm_surge
@@ -98,6 +99,10 @@ def run(args):
         raise ValueError("--defer-control-match only applies to fault runs")
     run_dir = ROOT/"runs"/args.run_id
     if run_dir.exists(): raise ValueError("Run exists; resume postprocessing only")
+    # Dual-boot RTC offset: right after a boot the clock can be 9 h off until
+    # NTP steps it, which would corrupt every label timestamp of the run.
+    host_start = host_clock()
+    require_ntp(host_start)
     no_active_chaos()
     before = snapshot()
     if not before["healthy"]: raise ValueError("Pods not healthy")
@@ -117,7 +122,8 @@ def run(args):
              "pair_order":profile.get("pair_order"),
              "control_match":"deferred" if args.defer_control_match else ("checked_before_run" if fault else None),
              "planned_onset_offset_seconds":profile["warmup_seconds"]+profile["baseline_seconds"],
-             "onset_offset_seconds":profile.get("onset_offset_seconds")}
+             "onset_offset_seconds":profile.get("onset_offset_seconds"),
+             "host_at_start":host_start}
     if profile.get("onset_offset_seconds") is not None and profile["onset_offset_seconds"]!=state["planned_onset_offset_seconds"]:
         raise ValueError("onset_offset_seconds != warmup_seconds + baseline_seconds")
     fault_record = None
@@ -259,6 +265,8 @@ def run(args):
             except Exception as exc: state['errors'].append('Emergency recovery: '+str(exc))
         try: save_json(run_dir/'environment-after.json',snapshot())
         except Exception as exc: state['errors'].append('Post-snapshot: '+str(exc))
+        state['host_at_end']=host_clock()
+        state['errors'].extend(reboot_errors(host_start,state['host_at_end']))
         save_json(run_dir/'runtime.json',state)
     try:
         stage('scripts/generate-run-manifest.py',['--profile',args.profile,'--evaluation-policy-version',args.policy_version],90)
