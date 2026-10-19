@@ -196,7 +196,7 @@
 
 **메모리(실행 중 1분 간격, `linux/out/capability-mem-20261016T071128Z.log`, 1차는 `…070430Z.log`):** 노드 사용 최대 7425Mi(47 %, 2차) / 7294Mi(46 %, 1차), available 최저 8715 MiB(2차) / 9352 MiB(1차), swap 사용 0. 정리 후 7016Mi, available 9170 MiB.
 
-### 7.12 4단계 (capacity C) — 중단, 미완료 (2026-10-16 17:56 KST)
+### 7.12 4단계 (capacity C) 1차 — 중단 (2026-10-16 17:56 KST, 7.13에서 이어서 완료)
 PC를 꺼야 해서 sweep을 rate 4 완료 직후 중단했다(tmux 세션 종료, fault 없는 측정이라 클러스터 영향 없음). **C는 아직 결정되지 않았다.** `capacity-sweep.py`는 끝까지 돌아야 `capacity-result.json`을 쓰므로 본 측정의 결과 파일은 없다. 판정 기준은 스크립트 고정값 그대로(성공률 ≥ 99.5 %, p99 ≤ max(500, 3×rate1 p99) = 500 ms, 달성률 90~110 %, dropped ≤ 1 %, assessment valid).
 - 시험(rate 1, 5분): PASS, `runs/_calibration/capacity-20261016t072722/capacity-result.json`. pipeline-v2 complete, quality m1a_overall PASS, run-manifest `host` 기록 확인.
 - 본 측정 `--rates 1,2,3,4,6,8 --minutes 10` (로그 `linux/out/capacity-main-20261016T073629Z.log`): rate 1/2/3/4 모두 PASS — 성공률 100 %, p99 124/156/125/129 ms, dropped 0, 거래 수 603/1204/1803/2403, assessment valid. rate 6 run(`calib-linux-v1-capacity-6p0-20261016t073629`)은 시작 직후 중단되어 미완료로 남겨 두었다(삭제하지 않음, 재측정은 새 stamp/ID).
@@ -210,3 +210,50 @@ PC를 꺼야 해서 sweep을 rate 4 완료 직후 중단했다(tmux 세션 종�
 - backend: Prometheus `/data` 306 MiB, Tempo `/var/tempo` 9.7 MiB(rate 1 시험 직후, kubectl exec). Loki는 이미지에 셸이 없어 미측정. local-path PVC는 같은 파일시스템이라 kubelet stats가 PVC별 값이 아닌 전체 사용량을 준다.
 
 남은 일(다음 세션): 새 stamp로 sweep 재실행(rate 6, 8까지, 또는 1~8 전체), C·0.4C·surge 계산, 25분 run 크기·export 시간 추정, 138 run 저장량과 일정 재계산. 재부팅 후에는 README 7.5 순서(NTP → Pod Ready → 05-verify)로 확인한다.
+
+### 7.13 4단계 (capacity C) 재개·완료 — C = 6 tx/s (2026-10-19)
+**끊긴 경위.** 1차 sweep `capacity-20261016t073629`(`--rates 1,2,3,4,6,8 --minutes 10`)은 rate 1~4를 끝내고, rate 6 run을 시작한 직후(17:56:06 시작, 17:56:20 중단) 멈췄다. 원인은 운영자가 PC를 끄려고 sweep을 중단한 것이다(7.12). journal상 tmux scope 종료 17:56:20 → GNOME 종료 대화상자 → 정상 shutdown 17:59:50(`last -x` "shutdown system down"). 스크립트 오류나 크래시는 아니다. 다음 부팅은 10/19 15:29(boot_id `380a74a8-…`). sweep이 끝까지 돌지 않아 1차의 `capacity-result.json`은 없다.
+
+**재부팅 후 확인(읽기만).** NTP 동기화 yes, node Ready, Pod 23개 모두 Ready, Chaos 객체 없음, `sch_netem` 로드. 부팅 직후 unattended-upgrade가 커널 7.0.0-38을 설치 중이라 CPU 부하가 있어서 끝날 때까지(15:43) 기다렸다가 시작했다. Automatic-Reboot는 꺼져 있지만 `/var/run/reboot-required`가 생겼다. 다음 블록 전에 재부팅 시점을 사람이 정해야 한다.
+
+**1~4 재검증.** 4개 run 모두 run-assessment-v2 valid(errors 없음), pipeline-v2 complete(export/canonical/re2 rc 0), runtime errors 없음, 5개 항목 모두 PASS. 미완료 rate-6 run(`calib-linux-v1-capacity-6p0-20261016t073629`)은 지우거나 재사용하지 않았다.
+
+**이어서 측정.** tmux `cap68`, `.venv/bin/python -B scripts/capacity-sweep.py --rates 6,8 --minutes 10 --max-p99-ms 500` (15:43:58~16:49:44, `runs/_calibration/capacity-20261019t064358/capacity-result.json`). p99 기준 500 ms는 rate 1 결과(124 ms → max(500, 372))로 고정했고 다시 계산하지 않았다.
+
+| rate (tx/s) | run ID | 성공률 | p50 / p99 (ms) | 달성 tx/s | dropped | assessment | 판정 |
+|---|---|---|---|---|---|---|---|
+| 1 | `…-1p0-20261016t073629` | 100 % | 36 / 124 | 1.005 | 0 | valid | PASS |
+| 2 | `…-2p0-20261016t073629` | 100 % | 37 / 156 | 2.007 | 0 | valid | PASS |
+| 3 | `…-3p0-20261016t073629` | 100 % | 34 / 125 | 3.005 | 0 | valid | PASS |
+| 4 | `…-4p0-20261016t073629` | 100 % | 35 / 129 | 4.005 | 0 | valid | PASS |
+| 6 | `…-6p0-20261019t064358` | 100 % | 133 / 326 | 6.007 | 0 | valid | PASS |
+| 8 | `…-8p0-20261019t064358` | 100 % | 265 / 545 | 8.005 | 0 | valid | **FAIL (p99)** |
+
+- **C = 6 tx/s** (처음 FAIL인 8 바로 아래 통과 단계). rate 8은 p99 하나만 기준을 넘었다.
+- 지연 곡선: 4 → 6 사이에서 p50이 35 → 133 ms로 꺾인다. 즉 C(=1.0C surge l3)는 이미 지연이 커지기 시작한 구간이다. 의도한 포화 수준이다.
+- 합친 요약: `runs/_calibration/capacity-merged-20261019/capacity-merged.json`(생성 스크립트 `merge.py`가 같은 폴더에 있다). 원래 `capacity-result.json`들은 수정하지 않았다. 곡선 CSV는 `linux/out/capacity-curve-20261019.csv`(rate, p50, p99, 성공률, 달성률). 둘 다 gitignore 경로라 커밋하지 않았다.
+
+**메모리(1분 간격 66회, `runs/_calibration/capacity-merged-20261019/resource-monitor.log`).** 노드 최대 9955Mi, available 최저 6621 MiB, swap 최대 89 MiB(1차 471 MiB보다 적다), Tempo 최대 2403Mi / 3Gi = 78 %, Prometheus 419Mi, otel gateway 281Mi, Loki 356Mi. OOMKilled 0, 재시작 증가 0.
+
+**run 크기·후처리 시간** (`linux/out/run-footprint.py`, 10분 run, MiB):
+
+| rate | 합계 | raw traces | raw logs | raw metrics | raw `_export` | canonical | re2 | 나머지 | export(91 s settle 포함) | canonical | re2 | 후처리 합계 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 453 | 127 | 57 | 9.2 | 223 | 15 | 4.4 | 18 | 269 s | 6 s | 2 s | 313 s |
+| 2 | 864 | 253 | 107 | 9.3 | 422 | 29 | 8.3 | 34 | 397 s | 20 s | 3 s | 461 s |
+| 3 | 1274 | 379 | 157 | 9.4 | 622 | 43 | 12 | 51 | 539 s | 66 s | 4 s | 701 s |
+| 4 | 1685 | 505 | 208 | 9.3 | 822 | 58 | 16 | 68 | 698 s | 95 s | 6 s | 884 s |
+| 6 | 2509 | 758 | 309 | 9.6 | 1222 | 87 | 24 | 101 | 925 s | 119 s | 9 s | 1159 s |
+| 8 | 3331 | 1010 | 409 | 9.6 | 1621 | 115 | 32 | 134 | 1206 s | 180 s | 12 s | 1555 s |
+
+**backend PVC(kubectl exec, sweep 직후).** Prometheus `/data` 702 MiB / 20Gi, Tempo `/var/tempo` 167 MiB / 30Gi (retention 둘 다 12h). Loki는 셸이 없어 미측정이다(측정용 Pod는 띄우지 않았다).
+
+**캠페인 산정** (거래 수에 대한 선형 적합, 6개 run: 크기 = 30.1 + 0.685 × 거래 + 0.94 MiB/분, export = 138 + 0.222 × 거래 s, 후처리 = 141 + 0.293 × 거래 s):
+- 부하: C = 6, 기본 0.4C = **2.4 tx/s**, surge 0.6C/0.8C/1.0C = 3.6 / 4.8 / 6.0 tx/s.
+- 25분 정식 run(0.4C, 거래 3600): 약 **2.5 GiB**(2520 MiB), export 약 938 s, 후처리 약 1196 s(약 20분). 같은 거래 수인 rate 6 10분 run 실측(2509 MiB, 1159 s)과 거의 같다. surge fault run(300 s 구간만 상향): l1 2767 / l2 3014 / l3 3260 MiB, 후처리 1302 / 1407 / 1512 s.
+- 138 run 총 저장량: 약 **344 GiB**(129 × 0.4C + surge 9). 현재 여유 829 GiB → 끝난 뒤 약 485 GiB가 남는다(backend PVC 최대 65 GiB 별도). README의 "1 GiB/run, 140 GiB" 추정은 2.5배 과소였다. 다만 디스크는 충분하다.
+- pair 1개: settle 300 s + 2 × (1500 s + 후처리 1196 s) ≈ **95분**(README·`--pair-minutes` 기본 95와 일치).
+- 69 pair 순수 실행 약 **109시간**. 하루 8 h 블록 → 블록당 5 pair, **14 블록**. 10 h 블록 → 6 pair, **12 블록**. 재시도·재부팅 복구·주말을 더하면 README 7.6의 2.5~3.5주 범위의 위쪽 끝이다.
+- 주의: 25분 run의 export 동안 Tempo가 rate 6~8 10분 run과 같은 거래 수(3600~4700)를 다루므로 Tempo 메모리는 이번 최대치(78 %) 근처까지 오를 수 있다. 시험 pair에서 다시 확인한다.
+
+남은 일: `campaigns/linux-v1/fault-params.yaml`의 `capacity_tps: 6`은 merged/resumed 결과 파일 경로와 함께 강도 동결 때 기록한다(이번에는 수정하지 않았다). 다음은 시험 pair(README 7.1, `--capacity-tps 6`)다.
