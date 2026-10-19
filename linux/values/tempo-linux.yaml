@@ -4,6 +4,9 @@
 # the legacy cohort ran with after its OOMs). Shorter retention also shrinks
 # the WAL/block replay after an unclean reboot. Watch for OOMKilled in
 # 05-verify and the trial pairs before freezing.
+# 2026-10-19: limit 3Gi -> 4Gi, request unchanged. Capacity sweep peak was
+# 2403Mi (78 % of 3Gi) at rate 8; a 25-min surge-L3 (1.0C) fault run exports
+# ~4700 transactions, more than the rate-8 10-min run (SETUP-REVIEW 7.14).
 tempo:
   retention: 12h
   resources:
@@ -12,7 +15,7 @@ tempo:
       memory: 1536Mi
     limits:
       cpu: "2"
-      memory: 3Gi
+      memory: 4Gi
 persistence:
   enabled: true
   size: 30Gi

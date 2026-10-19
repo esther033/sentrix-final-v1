@@ -1,0 +1,146 @@
+incident_id: inc-calib-linux-v1-cpu-checkoutservice-r01
+experiment_id: exp-calib-linux-v1-cpu-checkoutservice-r01
+run_id: calib-linux-v1-cpu-checkoutservice-r01
+control_run_id: calib-linux-v1-control-cpu-checkoutservice-r01
+baseline:
+  control_run_dir: /home/cloudman/Documents/sentrix-final-v1-main/scripts/../runs/calib-linux-v1-control-cpu-checkoutservice-r01
+  target_rps: 2.4
+  n_transactions: 2881
+  success_rate_pct: 100.0
+  p50_ms: 35
+  p99_ms: 120
+fault:
+  injected: true
+  type: cpu_saturation
+  cause_family: resource
+  injection_layer: Platform / compute
+  scope_kind: service_instance
+  scope_description: null
+  root_cause_service: checkoutservice
+  target_pod_uid: e603bf7f-e2a0-4a38-8234-a71c4c2b6a62
+  chaos_mesh_object: stresschaos/calib-linux-v1-cpu-checkoutservice-r01-fault
+  started_at: '2026-10-19T08:56:09.957339+00:00'
+  ended_at: '2026-10-19T09:01:09.207618+00:00'
+  removal_confidence: confirmed
+  injector_status: succeeded
+workload:
+  profile: calib-linux-v1-cpu-checkoutservice-r01
+  target_rps: 2.4
+  actual_rps: 2.403
+  dropped_iterations: 0
+impact:
+  confirmed: false
+  critical_failure: null
+  affected_endpoint: checkout
+  impact_started_at: null
+  evaluation_policy_version: v3
+recovery:
+  fault_removed_at: '2026-10-19T09:01:09.207618+00:00'
+  transaction_observation:
+    profile: calib-linux-v1-cpu-checkoutservice-r01
+    first_passing_at: '2026-10-19T09:01:09.574Z'
+    stable_at: '2026-10-19T09:01:09.574Z'
+    observation_status: pass
+  evaluation_policy_version: v3
+status: fault_active_no_impact
+data_views:
+  raw: runs/calib-linux-v1-cpu-checkoutservice-r01/raw-v2/
+  canonical: runs/calib-linux-v1-cpu-checkoutservice-r01/canonical-v2-3ffbb7c9b69e/
+  re2_compatible: runs/calib-linux-v1-cpu-checkoutservice-r01/re2-v2-3ffbb7c9b69e/
+data_generation: v2
+data_validation:
+  run:
+    complete: true
+    raw_export_complete: true
+    views:
+      raw: raw-v2
+      canonical: canonical-v2-3ffbb7c9b69e
+      re2_compatible: re2-v2-3ffbb7c9b69e
+  control:
+    complete: true
+    raw_export_complete: true
+    views:
+      raw: raw-v2
+      canonical: canonical-v2-ec4d67b2bca9
+      re2_compatible: re2-v2-ec4d67b2bca9
+validity:
+  injector_succeeded: true
+  removal_confirmed: true
+  telemetry_present_all_signals: true
+  actual_rate_meets_minimum: true
+  runtime_assessment:
+    valid: true
+    errors: []
+    actual_rps: 2.4026666666666667
+    elapsed_s: 1499.584
+    started_at: '2026-10-19T08:45:09.574Z'
+    ended_at: '2026-10-19T09:10:09.158Z'
+    fingerprint: c0b9b2165a8aa62d62da3fb102156201bb78fa6ce4187d38728527cad0139894
+    profile:
+      profile_name: calib-linux-v1-cpu-checkoutservice-r01
+      run_role: fault
+      campaign_id: calib-linux-v1
+      pair_id: calib-linux-v1-cpu-checkoutservice-r01
+      repetition: 1
+      cv_group: repetition-1
+      schedule_index: 6
+      onset_offset_seconds: 660
+      pair_order: fault_then_control
+      workload_seed: 2088130323
+      calibration_status: draft
+      target_rps: 2.4
+      time_unit: 1s
+      duration: 25m
+      warmup_seconds: 180
+      baseline_seconds: 480
+      fault_seconds: 300
+      recovery_seconds: 420
+      cooldown_seconds: 120
+      traffic_phase_rps:
+        warmup: 2.4
+        baseline: 2.4
+        fault: 2.4
+        recovery: 2.4
+        cooldown: 2.4
+      pre_allocated_vus: 15
+      max_vus: 80
+      stage_timeout: 5s
+      trace_workers: 2
+      fault:
+        type: cpu_saturation
+        target_kind: service_node
+        template: deploy/chaos-mesh/faults/cpu-saturation.yaml
+        params: {}
+        root_cause_service: checkoutservice
+        scope_kind: service_instance
+    expected_transactions: 3600.0
+    phase_plan:
+    - !!python/tuple
+      - warmup
+      - 180
+      - 2.4
+    - !!python/tuple
+      - baseline
+      - 480
+      - 2.4
+    - !!python/tuple
+      - fault
+      - 300
+      - 2.4
+    - !!python/tuple
+      - recovery
+      - 420
+      - 2.4
+    - !!python/tuple
+      - cooldown
+      - 120
+      - 2.4
+  control_match:
+    valid: false
+    errors:
+    - control is not preceding/fresh within 2h
+  dropped_iterations_under_threshold: true
+  raw_export_complete: true
+  data_views_complete: true
+  control_data_views_complete: true
+  is_valid_run: false

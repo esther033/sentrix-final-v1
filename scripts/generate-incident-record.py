@@ -137,8 +137,16 @@ def main():
     summaries = load_transactions(run_dir)
     run_assessment = assess_run(run_dir, args.data_generation)
     before = json.load(open(os.path.join(run_dir, "environment-before.json"), encoding="utf-8"))
-    match = match_control(control_dir, run_manifest["workload"]["profile"], before["fingerprint"],
-                          min(datetime.fromisoformat(r["event_time"].replace("Z", "+00:00")) for r in summaries), args.control_data_generation)
+    # Same anchor rule as scripts/evaluate-pair.py: a fault_then_control control
+    # follows the fault run, so it is matched against the fault run's end.
+    pair_order = profile.get("pair_order") or "control_then_fault"
+    if pair_order == "fault_then_control":
+        runtime = json.load(open(os.path.join(run_dir, "runtime.json"), encoding="utf-8"))
+        match_at = datetime.fromisoformat((runtime.get("finished_at") or runtime["started_at"]).replace("Z", "+00:00"))
+    else:
+        match_at = min(datetime.fromisoformat(r["event_time"].replace("Z", "+00:00")) for r in summaries)
+    match = match_control(control_dir, profile, before["fingerprint"], match_at, args.control_data_generation,
+                          pair_order=pair_order)
 
     fault_started = fault_record.get("started_at")
     fault_ended = fault_record.get("ended_at")

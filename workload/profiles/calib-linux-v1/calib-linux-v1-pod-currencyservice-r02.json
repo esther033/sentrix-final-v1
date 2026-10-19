@@ -1,0 +1,40 @@
+{
+  "profile_name": "calib-linux-v1-pod-currencyservice-r02",
+  "run_role": "fault",
+  "campaign_id": "calib-linux-v1",
+  "pair_id": "calib-linux-v1-pod-currencyservice-r02",
+  "repetition": 2,
+  "cv_group": "repetition-2",
+  "schedule_index": 58,
+  "onset_offset_seconds": 540,
+  "pair_order": "control_then_fault",
+  "workload_seed": 1846180884,
+  "calibration_status": "draft",
+  "target_rps": 2.4,
+  "time_unit": "1s",
+  "duration": "25m",
+  "warmup_seconds": 180,
+  "baseline_seconds": 360,
+  "fault_seconds": 300,
+  "recovery_seconds": 540,
+  "cooldown_seconds": 120,
+  "traffic_phase_rps": {
+    "warmup": 2.4,
+    "baseline": 2.4,
+    "fault": 2.4,
+    "recovery": 2.4,
+    "cooldown": 2.4
+  },
+  "pre_allocated_vus": 15,
+  "max_vus": 80,
+  "stage_timeout": "5s",
+  "trace_workers": 2,
+  "fault": {
+    "type": "pod_failure",
+    "target_kind": "service_node",
+    "template": "deploy/chaos-mesh/faults/pod-failure.yaml",
+    "params": {},
+    "root_cause_service": "currencyservice",
+    "scope_kind": "service_instance"
+  }
+}

@@ -257,3 +257,40 @@ PC를 꺼야 해서 sweep을 rate 4 완료 직후 중단했다(tmux 세션 종�
 - 주의: 25분 run의 export 동안 Tempo가 rate 6~8 10분 run과 같은 거래 수(3600~4700)를 다루므로 Tempo 메모리는 이번 최대치(78 %) 근처까지 오를 수 있다. 시험 pair에서 다시 확인한다.
 
 남은 일: `campaigns/linux-v1/fault-params.yaml`의 `capacity_tps: 6`은 merged/resumed 결과 파일 경로와 함께 강도 동결 때 기록한다(이번에는 수정하지 않았다). 다음은 시험 pair(README 7.1, `--capacity-tps 6`)다.
+
+### 7.14 5단계 시험(calibration) pair 4개 (2026-10-19~20)
+**재부팅 후 점검.** 커널 7.0.0-38-generic(boot_id `40b3608b-…`, 10/19 17:23 부팅), NTP 동기화 yes, Pod 모두 Ready, Chaos 객체 없음, `sch_netem` 로드 확인. `bash linux/capability/run-all.sh` 재실행 → cpu·pod·network 모두 PASS(`linux/out/capability-20261019T082906Z/`. cpu 0.0027 → 0.5000 → 0.0028 core, throttled +261 / pod 같은 UID 유지, fault 중 unready / delay RTT 100.16 ms(다른 경로 0.085 ms), loss 11.33 %(다른 경로 0 %)). 이후 `sentrix-probe` ns 삭제. 05-verify PASS(`linux/out/deploy-20261019T083727Z`).
+
+**Tempo 메모리 limit 3Gi → 4Gi**(`linux/values/tempo-linux.yaml`, request 1536Mi는 그대로). 근거: capacity sweep 최대치가 2403Mi(3Gi의 78 %, rate 8)였다. 25분 surge-L3 fault run은 거래 약 4700건을 export해서 rate 8 10분 run보다 많다. `helm upgrade tempo …`(revision 2)를 하면 Service가 ClusterIP로 돌아가므로 04 스크립트의 NodePort 30320 patch를 다시 적용했다. 그다음 05-verify 12/12 PASS. 노드 limit 합계 memory 11468Mi(73 %, 이전 10444Mi), request 4974Mi(31 %), CPU limit 11225m. 시험 pair 동안 Tempo 최대치는 2302Mi / 4Gi = 56 %였다.
+
+**스케줄.** `.venv/bin/python -B scripts/generate-campaign.py --seed 1 --campaign-id calib-linux-v1 --capacity-tps 6` → `campaigns/calib-linux-v1/schedule.json`, profile 138개. 모든 profile이 target_rps 2.4, phase 합 1500 s, `draft: true`이다. 시험 pair 4개는 모두 `fault_then_control`이다. onset: cpu-checkout 660 s, loss-front-product 720 s, pod-checkout 720 s, delay-front-product 480 s.
+
+**실행.** tmux `sentrix-campaign`에서 `linux/campaign/start.sh --schedule campaigns/calib-linux-v1/schedule.json --allow-draft --only …`를 실행했다(`--stop-before` 없음). 큐 로그는 `runs/_campaign/calib-linux-v1/queue.log`, 1분 간격 자원 로그는 `resource-monitor.log`, pair별 분석은 `analysis/<pair>.json`(`analyze-pair.py`)이다. 모두 gitignore 경로다.
+
+**버그 수정: `scripts/generate-incident-record.py`.** 첫 pair(cpu)가 incident-record에서 rc 1로 멈췄다. 오류는 "control is not preceding/fresh within 2h"였다. `fault_then_control`인데도 control을 fault 시작 시각 기준으로 "앞선 run"인지 검사했기 때문이다. `evaluate-pair.py`와 같은 규칙(fault_then_control이면 fault run 종료 시각 기준, `pair_order` 전달)으로 고쳤다. 단위 테스트 89개 OK(이 경우의 회귀 테스트는 아직 없음). 그 pair의 incident-record만 다시 돌려 rc 0, control_match valid를 확인했다(`audits/pair-calib-linux-v1-cpu-checkoutservice-r01/incident-record-rerun-after-fix.log`, 이전 yaml은 `incidents/_history/`). audit status.json은 failed 그대로 두었고(수정하지 않음), queue.log에 NOTE를 남겼다. 나머지 3 pair로 큐를 다시 시작했다. 이후 3 pair는 모두 rc 0이다.
+
+| pair | 파이프라인/assessment (fault, control) | pair-assessment | 주입 요청 → AllInjected → AllRecovered (UTC) | 실제 효과 | evaluation_v2 영향 | 시간 / 저장 |
+|---|---|---|---|---|---|---|
+| cpu-checkoutservice-r01 | complete·valid / complete·valid | valid | 08:56:09.53 → 09.96 → 09:01:09.21 (confirmed) | checkout CPU 0.004 → 0.295 → 0.004 core(limit 500m), throttled period 0 → 91 %. checkout 발신 span p99 1~3 → 25~41 ms, p50 그대로 | **없음**: 기준 성공 100 %, p99 120 ms → 임계 95 % / 360 ms. fault 구간 n 719, 성공 100 %, p99 125 ms, 최악 30 s p99 141 ms | 91.8분(+settle 5분) / 5155 MiB |
+| loss-front-product-r01 | complete·valid / complete·valid | valid | 10:36:13.75 → 16.91 → 10:41:14.72 (confirmed) | **없음**: frontend→productcatalog span p50 0.1 / p99 0.8 ms, 오류 0 %(pre·during·post 동일, n≈17,900) | **없음**: 기준 p99 121 ms, fault 구간 p99 132 ms, 최악 30 s p99 217 ms, 성공 100 % | 91.7분 / 5156 MiB |
+| pod-checkoutservice-r01 | complete·valid / complete·valid | valid | 12:12:55.29 → 59.31 → 12:17:55.86 (confirmed) | 같은 UID e603bf7f… 유지. Ready=false 첫 관측은 요청 후 **15.2 s**(kube-state-metrics 수집 간격), unready 약 285 s. 사용자 오류는 요청 후 4.3 s(12:12:59.6)부터 시작했다. frontend→checkout 712건 모두 오류(p50 0.0 ms, 즉시 실패). checkout 재시작 2 → 8. endpoint 객체는 직접 수집하지 않았다 | **있음**(error_rate_increase, 12:12:59.6): fault 구간 성공 0 %(임계 95 %), 기준 p99 124 ms. 복구 후 5 s 안에 통과 | 89.8분 / 5053 MiB |
+| delay-front-product-r01 | complete·valid / complete·valid | valid | 13:43:47.08 → 49.92 → 13:48:48.08 (confirmed) | **없음**: frontend→productcatalog p50 0.1 / p99 0.8 ms(control 동일). 다른 edge 13개도 변화 없음 | **없음**: 기준 p99 128 ms → 임계 384 ms, fault 구간 p99 121 ms, 최악 30 s p99 266 ms, 성공 100 % | 92.7분 / 5160 MiB |
+
+edge pod: frontend-5c676694c8-xfx5r `e2e4f7ec-fb7f-454d-8754-cfb35fb7dddf` → productcatalogservice-69cd8c9fb9-79vw2 `97473837-75e2-42e9-8a45-bd87f6db3d66`. Chaos 기록상 두 pod 모두 Injected였다. pair 하나는 약 91.5분 + settle 5분 = **96.5분**으로, 추정 95분과 맞는다. 저장량은 pair당 약 5.0 GiB로 추정(2 × 2.5 GiB)과 같다.
+
+**delay·loss 효과 없음의 원인(가설, 추가 주입은 하지 않음).** 호출하는 쪽은 모두 Service 이름(`productcatalogservice:3550` 등)으로 ClusterIP에 접속한다. 시험 대상 edge 5개의 호출자 frontend·checkout·recommendation이 모두 그렇다. kube-proxy DNAT(ClusterIP → pod IP)는 pod의 egress tc를 지난 뒤 호스트 네트워크 namespace에서 일어난다. 따라서 chaos-mesh가 source pod eth0에 거는 "목적지 = target pod IP" 필터에 걸리지 않는다. capability probe는 pod IP로 직접 ping했기 때문에 이 경로를 검사하지 않았다. 이 가설이 맞으면 **delay·loss 30 pair 전체가 같은 결과**(효과 없음)가 된다.
+
+**메모리(1분 간격 388회).** 노드 최대 10609Mi, available 최저 7074 MiB, swap 0 → 최대 1033 MiB(꾸준히 증가, available은 충분), Tempo 최대 2302Mi / 4Gi, Prometheus 최대 810Mi. OOMKilled 0. 재시작 증가는 pod fault 대상 checkoutservice(2 → 8)뿐이다. 종료 후 Chaos 객체 4개는 남아 있지만 모두 desiredPhase Stop, AllRecovered=True다(큐 gate가 허용하는 회복된 기록용 객체이며, 지우지 않았다). 디스크 여유는 809 GiB다.
+
+**강도 제안(`fault-params.yaml`은 수정하지 않았다).**
+- pod_failure: **유지.** 즉시, 완전한 영향을 낸다. 대상 5개 모두 동기 호출 경로라 같은 결과가 예상된다.
+- cpu_saturation: **상향 제안.** 1 worker로는 throttling이 91 %여도 사용자 영향이 없다. checkout과 payment는 거래당 1회만 호출되어 다른 대상도 영향이 없을 가능성이 크다. currency(약 46 call/s)와 productcatalog(약 60 call/s)는 페이지마다 여러 번 순차 호출되어 증폭될 수 있다. 템플릿을 workers 2~4로 올려 quota 전체를 점유하게 한 뒤 checkout 1건을 다시 시험하기를 제안한다(템플릿은 현재 `workers: 1` 고정).
+- network_delay / packet_loss: **강도 문제가 아니라 주입 경로 문제다. 강도를 바꾸기 전에 템플릿을 고쳐야 한다.** 후보: (a) 목적지 Service ClusterIP를 `externalTargets`에 추가, (b) 목적지 pod에서 `direction: from`/`both`로 걸기(목적지에서는 DNAT 이후 원래 source pod IP가 보인다). 먼저 capability probe를 Service 이름 경로로 확장해 검증하자. 경로를 고친 뒤 100 ms는 frontend가 거래당 productcatalog를 약 25회 호출하므로 오히려 강할 수 있다. 다시 시험하고 정하자.
+- traffic_surge(capacity 곡선 기준, 기준 p99 약 120~128 ms → 3배 임계 약 360~384 ms. 성공률은 rate 8에서도 100 %라 p99 기준만 관련된다):
+  - L1 3.6 tx/s: rate 3~4의 p99가 125~129 ms이므로 **영향 없음** 예상.
+  - L2 4.8 tx/s: rate 4(129)와 6(326) 사이이므로 **영향 없음** 예상.
+  - L3 6.0 tx/s: 정상상태 p99 326 ms는 임계보다 조금 아래라 **경계**다. 30 s 창의 꼬리에서만 넘을 수 있다.
+  - surge가 영향을 확실히 내야 한다면 L3를 약 8 tx/s(1.33C, p99 545 ms ≈ 4.3배)로 올려야 한다. 이는 load_fractions 설계 변경이므로 결정이 필요하다.
+- 스택 여유: 거래 수가 같으면 강도를 올려도 관측 데이터량은 거의 그대로다. Tempo 56 %, available 7 GiB 이상, 디스크 809 GiB로 여유가 있다. surge L3를 8 tx/s로 올리면 Tempo는 sweep의 rate 8 최대치(2403Mi, 4Gi의 59 %) 수준이 될 것이다. swap 증가 추세는 블록마다 확인한다.
+
+남은 일: delay·loss 주입 경로 수정·검증(템플릿 + capability probe), cpu workers 결정, surge 목표 결정. 그 후 시험 pair를 새 run ID(`-r02` 등)로 다시 돌리고 강도를 동결한다. `generate-incident-record.py`의 fault_then_control 회귀 테스트를 추가한다. 커밋한 `campaigns/calib-linux-v1/`, `workload/profiles/calib-linux-v1/`는 draft 시험용이다.
