@@ -33,7 +33,8 @@ docs/                Milestone write-ups
 
 Online Boutique is the single target for development data, self-collected data
 and the final demo (decided 2026-10-16). Current plan and dataset roles:
-[`docs/PROJECT-DIRECTION.md`](docs/PROJECT-DIRECTION.md).
+[`sentrix-project-context.md`](sentrix-project-context.md); milestones done and remaining:
+[`docs/MILESTONES.md`](docs/MILESTONES.md).
 
 ## Linux (k3s) setup — use this
 

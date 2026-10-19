@@ -1,6 +1,6 @@
 # Linux 데이터 수집 세팅 인수인계
 
-> **2026-10-16 v2 보완판**: Linux 실행은 `linux/README.md`, 프로젝트 방향(Online Boutique 단일 대상)은 `docs/PROJECT-DIRECTION.md`, 보완 내역과 남은 위험은 `docs/SETUP-REVIEW-20261016.md`, 에이전트 지시는 `TEAMMATE-PROMPT-v2.md`를 사용한다. 아래는 v1 원문이다.
+> **2026-10-16 v2 보완판**: Linux 실행은 `linux/README.md`, 프로젝트 기준 문서는 `sentrix-project-context.md`, 진행 상황은 `docs/MILESTONES.md`, 보완 내역과 남은 위험은 `docs/SETUP-REVIEW-20261016.md`, 에이전트 지시는 `TEAMMATE-PROMPT-v2.md`를 사용한다. 아래는 v1 원문이다.
 
 작성: 2026-10-14. 이 패키지는 Linux 설치, 수집 코드 보완, 시험 수집 및 본 수집 준비를 위한 소스 스냅샷이다.
 

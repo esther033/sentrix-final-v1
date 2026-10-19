@@ -6,7 +6,7 @@
 
 SentriX `linux-v1` 데이터셋을 이 Linux 머신에서 수집할 수 있게 세팅해줘. 현재 디렉터리가 패키지 루트다.
 
-먼저 읽기: `docs/PROJECT-DIRECTION.md`(대상은 Online Boutique 하나, Sock Shop/EKS 작업 없음) → `docs/SETUP-REVIEW-20261016.md` → `linux/README.md` → `handoff/linux-v1/ACCEPTANCE.md` → `campaigns/linux-v1/*.yaml`.
+먼저 읽기: `sentrix-project-context.md`(현재 기준, 대상은 Online Boutique 하나) → `docs/MILESTONES.md` → `docs/SETUP-REVIEW-20261016.md` → `linux/README.md` → `handoff/linux-v1/ACCEPTANCE.md` → `campaigns/linux-v1/*.yaml`.
 
 ## 규칙
 
