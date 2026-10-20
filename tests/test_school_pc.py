@@ -95,16 +95,19 @@ class ManifestHostBlockTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             start = {"boot_id": "a", "booted_at": "t0", "ntp_synchronized": "yes"}
             end = {"boot_id": "a", "booted_at": "t0", "ntp_synchronized": "yes"}
-            Path(tmp, "runtime.json").write_text(json.dumps({"host_at_start": start, "host_at_end": end}))
+            Path(tmp, "runtime.json").write_text(json.dumps({"host_at_start": start, "host_at_end": end,
+                                                             "environment_id": "206-40"}))
             now = {"boot_id": "a", "ntp_synchronized": "yes"}
             block = manifest.host_block(tmp, current=now)
-            self.assertEqual(block, {"at_start": start, "at_end": end, "at_manifest": now})
+            self.assertEqual(block, {"at_start": start, "at_end": end, "at_manifest": now,
+                                     "environment_id": "206-40"})
 
     def test_host_block_without_runtime(self):
         with tempfile.TemporaryDirectory() as tmp:
             block = manifest.host_block(tmp, current={"boot_id": "a"})
             self.assertIsNone(block["at_start"])
             self.assertIsNone(block["at_end"])
+            self.assertIsNone(block["environment_id"])
 
 
 def pair(i, fault_type):

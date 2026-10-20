@@ -8,6 +8,7 @@ while it is not.
 """
 from datetime import datetime, timezone
 from pathlib import Path
+import socket
 import subprocess
 
 BOOT_ID_PATH = Path("/proc/sys/kernel/random/boot_id")
@@ -23,6 +24,11 @@ def ntp_synchronized(runner=subprocess.run):
         return "unknown"
     value = (p.stdout or "").strip()
     return value if p.returncode == 0 and value in ("yes", "no") else "unknown"
+
+
+def environment_id():
+    """Collection PC identity for parallel collection (= shard name): the hostname."""
+    return socket.gethostname()
 
 
 def host_clock(boot_id_path=BOOT_ID_PATH, stat_path=STAT_PATH, runner=subprocess.run):

@@ -9,6 +9,7 @@
 04 스택 배포  →  05 엔드포인트·series·digest 확인
 capability (CPU / pod / network edge)  →  capacity C 측정
 fault-params 동결  →  schedule 생성  →  시험 pair 2개  →  (승인 후) 전체 캠페인
+(PC 3대 병렬 수집: 8절, 새 PC 세팅: NEW-PC.md)
 ```
 
 ## 0. 압축 해제 위치
@@ -120,7 +121,7 @@ tmux attach -t sentrix-campaign
 ### 7.3 블록 시작 전 점검 (매일)
 
 ```bash
-cd ~/Documents/sentrix-final-v1-main
+cd ~/Documents/sentrix-final-v1-main     # 206-40의 경로. 새 PC는 ~/Documents/sentrix-final-v1
 # 1) 부팅 직후면 NTP 동기화를 기다린다 (Windows 사용 후 시계가 +9h 틀어져 있을 수 있음)
 timedatectl show -p NTPSynchronized --value      # yes 가 나올 때까지 대기
 timedatectl                                      # Local time 이 실제 시각과 맞는지 눈으로 확인
@@ -181,6 +182,99 @@ set -a; . linux/config/endpoints.env; set +a
 - queue는 재시작 가능하다: 완료된 pair는 건너뛰고, 미완료 audit가 있으면 **멈추고 사람의 결정을 기다린다**(같은 run ID 재사용 금지).
 - pair 사이마다 NTP 동기화 + Chaos 잔류 없음 + 모든 Pod Ready 확인 → 5분 정상 관찰 → 다시 확인.
 - 전원 차단 등으로 fault가 남았으면: `bash linux/campaign/emergency-cleanup.sh`
+
+## 8. 병렬 수집 (PC 3대: 206-40 + 2대)
+
+교수님 지시로 정식 69 pair를 PC 3대에 나눠 돌린다. **스케줄은 하나(seed 하나)**다. 각 pair(fault run + control run)는 PC 한 대에서만 돈다. 새 PC 세팅 순서는 [`NEW-PC.md`](NEW-PC.md)를 따른다.
+
+### 8.1 브랜치와 코드 버전
+
+| PC | 브랜치 | 코드 |
+|---|---|---|
+| 206-40 | `school-pc` | 코드 수정은 **206-40에서만** 한다(테스트 통과 후 commit). |
+| 다른 PC | `collect-<pc이름>` | 206-40이 만든 **태그 버전**에서 브랜치를 만든다. 코드는 고치지 않는다. 이 브랜치에는 `docs/pc/<pc이름>.md`와 `incidents/`만 commit한다. |
+
+- `<pc이름>`은 그 PC의 `hostname`이다. 이 값이 shard 파일 이름이자 run 기록의 `environment_id`다.
+  - 기록 위치: `runtime.json`, `run-manifest.yaml`(top-level과 `host`), `incidents/*.yaml`.
+  - 3대의 hostname이 서로 달라야 한다.
+- 태그는 강도 동결, 정식 스케줄 생성, shard 생성까지 끝난 school-pc commit에 붙인다(사람이 승인한 뒤 따로 지시한다). 모든 PC가 같은 태그로 돌아야 profile, template, values overlay가 같다.
+- 수집 중 코드 수정이 꼭 필요하면 206-40에서 고치고 테스트한 뒤 새 태그를 만든다. 다른 PC는 블록 사이에만 새 태그로 옮기고, 그 사실을 `docs/pc/<pc이름>.md`에 적는다.
+
+### 8.2 PC별 기록
+
+- `docs/pc/<pc이름>.md`: 하드웨어(CPU, RAM, 디스크 종류), OS·커널, k3s·Chaos Mesh 버전, preflight와 capability 결과, 처리 용량 확인 결과(8.3), 블록 일지를 적는다. 블록 일지 항목은 날짜, 시작·종료, 완료·실패 pair, 디스크, 특이사항이다.
+- `docs/MILESTONES.md`와 `docs/SETUP-REVIEW-*.md`는 **206-40만 갱신**한다. 다른 PC의 결과는 206-40이 `docs/pc/*.md`를 보고 반영한다.
+
+### 8.3 새 PC 처리 용량 확인과 비교 기준
+
+캠페인의 C는 206-40에서 측정한 **6 tx/s를 모든 PC에 그대로 쓴다**. 스케줄이 하나이므로 baseline 2.4 tx/s와 surge 4.8/6.0/8.0 tx/s도 같다. 새 PC에서는 C를 다시 정하지 않고, 같은 부하를 감당하는지만 확인한다.
+
+```bash
+set -a; . linux/config/endpoints.env; set +a
+.venv/bin/python -B scripts/capacity-sweep.py --rates 4,6,8 --minutes 5 --max-p99-ms 500 --campaign linux-v1-$(hostname)
+```
+
+- 각 rate 5분이다(warmup 120 s 뒤 steady 180 s). p99 기준은 **500 ms 고정**이다. 첫 FAIL에서 멈춘다.
+- run ID에 hostname이 들어가므로 나중에 데이터를 합쳐도 겹치지 않는다.
+- 206-40 기준값(10분, `runs/_calibration/capacity-merged-20261019/`):
+
+| rate | 206-40 p50 / p99 (ms) | 판정 |
+|---|---|---|
+| 4 | 35 / 129 | PASS |
+| 6 | 133 / 326 | PASS |
+| 8 | 265 / 545 | FAIL (p99 > 500) |
+
+- **수집 가능 조건:** rate 4와 6이 모두 PASS다. 조건은 success ≥ 99.5 %, p99 ≤ 500 ms, 달성률 90~110 %, dropped ≤ 1 %, assessment valid다. 하나라도 FAIL이면 그 PC는 수집을 시작하지 않고 206-40에 보고한다(제외 또는 shard 재배정은 사람이 정한다).
+- **비교로 기록할 것:**
+  - rate 4의 p50·p99를 206-40과 비교한다. p50이 206-40의 0.5~2배 밖이면 성능 차이로 특이사항에 적는다.
+  - rate 8의 PASS/FAIL. 206-40은 FAIL이다. 새 PC가 PASS하면 그 PC에서는 surge L3(8 tx/s)가 상대적으로 약하다. 이 차이는 `environment_id`로 분석한다.
+- 결과 파일 `runs/_calibration/capacity-*/capacity-result.json`의 경로와 위 숫자를 `docs/pc/<pc이름>.md`에 적는다.
+
+### 8.4 shard 생성 (206-40에서, 정식 스케줄 생성 직후)
+
+```bash
+.venv/bin/python -B scripts/shard-campaign.py --pc 206-40 --pc <pc2> --pc <pc3> --dry-run   # 분포 확인
+.venv/bin/python -B scripts/shard-campaign.py --pc 206-40 --pc <pc2> --pc <pc3>
+# -> campaigns/linux-v1/shards/<pc이름>.json, commit 후 태그
+```
+
+- 스케줄 순서대로 돌아가며 배정한다. 같은 셀(fault 종류 × 대상)의 반복 3개는 서로 다른 PC로 간다. 그래서 PC 3대면 각 PC가 23개 셀을 하나씩 받는다(23 pair, fault 종류 5/5/5/5/3, 반복 1/2/3이 섞임).
+- shard는 `schedule.json`의 SHA-256을 고정한다. 스케줄이 바뀌면 shard도 다시 만든다.
+
+### 8.5 PC별 실행
+
+```bash
+linux/campaign/start.sh --shard campaigns/linux-v1/shards/$(hostname).json \
+  --fault-type cpu_saturation --fault-type network_delay --fault-type packet_loss --stop-before HH:MM
+```
+
+- 블록 운영(7.2~7.5)은 같다. tier 순서도 PC마다 같다.
+- `--shard`는 다른 host용 shard나 다른 schedule에서 만든 shard를 거부한다.
+- 한 pair의 두 run은 같은 PC에서 돈다. control 매칭은 namespace·node UID가 포함된 환경 fingerprint를 비교하므로 다른 PC의 run과는 짝지어지지 않는다.
+- 실패 pair의 재시도 ID, `decisions.yaml`의 제외 결정은 그 PC에서 내리고 `docs/pc/<pc이름>.md`에도 적는다.
+
+### 8.6 데이터 모으기
+
+`runs/`는 git에 올리지 않는다(run당 약 2.5 GiB). 수집이 끝나면(또는 tier가 끝날 때마다) 외장 디스크나 206-40으로 복사하고 해시로 검증한다.
+
+```bash
+# 보내는 PC (예: tier 1 끝난 뒤)
+cd ~/Documents/sentrix-final-v1
+H=$(hostname); OUT=transfer-$H-$(date -u +%Y%m%dT%H%MZ); mkdir -p "$OUT"
+ls -d runs/linux-v1-* runs/calib-linux-v1-$H-* runs/_calibration > "$OUT/paths.txt"   # 이 PC의 run과 용량 확인 기록
+find $(cat "$OUT/paths.txt") runs/_campaign/linux-v1 audits -type f -print0 | sort -z | xargs -0 sha256sum > "$OUT/SHA256SUMS"
+rsync -a --info=progress2 $(cat "$OUT/paths.txt") /media/<외장>/sentrix-$H/runs/
+rsync -a runs/_campaign/linux-v1/ /media/<외장>/sentrix-$H/runs/_campaign/linux-v1/
+rsync -a audits/ /media/<외장>/sentrix-$H/audits/
+cp "$OUT/SHA256SUMS" /media/<외장>/sentrix-$H/
+# 받는 쪽 (외장 디스크 위 또는 206-40에 복사한 위치에서)
+cd /media/<외장>/sentrix-$H && sha256sum -c --quiet SHA256SUMS && echo ALL OK
+```
+
+- 206-40으로 합칠 때 run 폴더(`runs/<run_id>`)는 ID가 PC마다 다르므로 그대로 `runs/` 아래에 둔다. 이미 같은 이름이 있으면 덮어쓰지 말고 멈춘다(`rsync --ignore-existing`을 쓰고 건너뛴 파일이 없는지 확인).
+- PC마다 같은 이름인 `runs/_campaign/linux-v1/`(queue.log 등)과 `audits/`는 `runs/_campaign/linux-v1/hosts/<pc이름>/` 아래에 따로 둔다. 206-40 자신의 파일은 덮어쓰지 않는다.
+- 복사 후 `sha256sum -c`가 모두 OK인지, run 수(PC당 46 run = 23 pair × 2)가 맞는지 확인한다. 그 뒤에야 원본 PC의 데이터를 지울지 정한다(지우는 것은 사람이 결정한다).
+- `incidents/*.yaml`은 각 PC의 `collect-<pc이름>` 브랜치에 commit·push한다. 파일 이름이 run ID라 겹치지 않으므로 206-40에서 merge한다.
 
 ## 시간·용량 산정
 

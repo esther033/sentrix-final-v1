@@ -12,7 +12,7 @@ import urllib.request
 import yaml
 
 from evaluation_v2 import seconds, match_control, assess_run
-from host_state import host_clock, require_ntp, reboot_errors
+from host_state import environment_id, host_clock, require_ntp, reboot_errors
 from telemetry_export import atomic_write, save_json, digest, exclusive_export
 from view_integrity import safe_name
 from workload_evidence import confirm_surge
@@ -124,7 +124,7 @@ def run(args):
              "control_match":"deferred" if args.defer_control_match else ("checked_before_run" if fault else None),
              "planned_onset_offset_seconds":profile["warmup_seconds"]+profile["baseline_seconds"],
              "onset_offset_seconds":profile.get("onset_offset_seconds"),
-             "host_at_start":host_start}
+             "host_at_start":host_start,"environment_id":environment_id()}
     if profile.get("onset_offset_seconds") is not None and profile["onset_offset_seconds"]!=state["planned_onset_offset_seconds"]:
         raise ValueError("onset_offset_seconds != warmup_seconds + baseline_seconds")
     fault_record = None

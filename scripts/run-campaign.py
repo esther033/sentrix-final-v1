@@ -21,6 +21,12 @@ Daily blocks on a shared, often rebooted machine (206-40):
   directory has less free space.
 * The between-pair gate also requires NTP synchronization (dual-boot RTC
   offset right after a boot).
+
+Parallel collection on several PCs (linux/README.md "병렬 수집"):
+* --shard campaigns/<id>/shards/<hostname>.json runs only that PC's pairs
+  (scripts/shard-campaign.py). The shard must pin this exact schedule.json
+  (SHA-256) and be named after this host (host_state.environment_id), so a PC
+  cannot run another PC's pairs by mistake.
 """
 import argparse
 from datetime import datetime, timedelta, timezone
@@ -34,7 +40,8 @@ import time
 
 import yaml
 
-from host_state import ntp_synchronized
+from campaign_shard import load_shard
+from host_state import environment_id, ntp_synchronized
 
 ROOT = Path(__file__).resolve().parents[1]
 K3S_DATA = Path("/var/lib/rancher")
@@ -83,10 +90,11 @@ def pair_status(fault_id):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def select_pairs(pairs, only=None, fault_types=None):
-    """Filter by pair ID and fault type, keeping schedule order."""
+def select_pairs(pairs, only=None, fault_types=None, shard=None):
+    """Filter by pair ID, fault type and shard pair IDs, keeping schedule order."""
     return [p for p in pairs
-            if (not only or p["pair_id"] in only) and (not fault_types or p["fault_type"] in fault_types)]
+            if (not only or p["pair_id"] in only) and (not fault_types or p["fault_type"] in fault_types)
+            and (shard is None or p["pair_id"] in shard)]
 
 
 def parse_hhmm(value):
@@ -134,6 +142,7 @@ def main(argv=None):
     ap.add_argument("--pair-minutes", type=int, default=95, help="expected pair duration for --stop-before")
     ap.add_argument("--min-free-gib", type=float, default=20,
                     help="stop before a pair when runs/ or the k3s data dir has less free space")
+    ap.add_argument("--shard", help="campaigns/<id>/shards/<hostname>.json: run only this PC's pairs")
     ap.add_argument("--allow-draft", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
@@ -142,6 +151,14 @@ def main(argv=None):
     if schedule.get("draft") and not args.allow_draft and not args.dry_run:
         raise SystemExit("Schedule was generated from draft parameters; freeze fault-params.yaml and regenerate "
                          "(or pass --allow-draft for a rehearsal that is NOT part of the formal corpus).")
+    shard_name, shard_ids = None, None
+    if args.shard:
+        try:
+            shard_name, shard_ids = load_shard(args.shard, args.schedule, schedule)
+        except ValueError as e:
+            raise SystemExit(f"--shard {args.shard}: {e}")
+        if shard_name != environment_id() and not args.dry_run:
+            raise SystemExit(f"--shard {args.shard} is for host {shard_name!r}, this host is {environment_id()!r}")
     state_dir = ROOT / "runs" / "_campaign" / campaign
     state_dir.mkdir(parents=True, exist_ok=True)
     decisions_path = state_dir / "decisions.yaml"
@@ -151,16 +168,16 @@ def main(argv=None):
     unknown = sorted(set(args.fault_types or []) - known_types)
     if unknown:
         raise SystemExit(f"unknown --fault-type {unknown}; schedule has {sorted(known_types)}")
-    pairs = select_pairs(schedule["pairs"], args.only, args.fault_types)
+    pairs = select_pairs(schedule["pairs"], args.only, args.fault_types, shard_ids)
     deadline = next_deadline(args.stop_before, datetime.now().astimezone()) if args.stop_before else None
     with (state_dir / "queue.log").open("a", encoding="utf-8") as log:
         def note(msg):
             line = f"{now()} {msg}"
             print(line, flush=True); log.write(line + "\n"); log.flush()
 
-        if args.fault_types or deadline:
+        if args.fault_types or deadline or shard_name:
             note(f"block: fault types={args.fault_types or 'all'} stop-before={deadline.isoformat() if deadline else None} "
-                 f"pairs selected={len(pairs)}")
+                 f"shard={shard_name} host={environment_id()} pairs selected={len(pairs)}")
         return run_queue(args, pairs, excluded, state_dir, deadline, note)
 
 

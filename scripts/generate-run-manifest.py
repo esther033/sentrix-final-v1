@@ -93,7 +93,8 @@ def host_block(run_dir, current=None):
         with open(path, "r", encoding="utf-8") as f:
             runtime = json.load(f)
     return {"at_start": runtime.get("host_at_start"), "at_end": runtime.get("host_at_end"),
-            "at_manifest": current if current is not None else host_clock()}
+            "at_manifest": current if current is not None else host_clock(),
+            "environment_id": runtime.get("environment_id")}
 
 
 def main():
@@ -145,12 +146,14 @@ def main():
     else:
         milestone = "M1B"
 
+    host = host_block(run_dir)
     manifest = {
         "run_id": args.run_id,
         "milestone": milestone,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "cluster": cluster_info(),
-        "host": host_block(run_dir),
+        "host": host,
+        "environment_id": host["environment_id"],
         "release": {
             "online_boutique": ONLINE_BOUTIQUE_SOURCE,
             "image_digests": image_digests,

@@ -205,12 +205,17 @@ def main():
     scope_kind = profile.get('fault', {}).get('scope_kind', scope_kind)
     if scope_kind not in ('service_instance', 'dependency_edge', 'entrypoint'):
         raise ValueError('Unsupported root-cause scope')
+    # collection PC (hostname) from the fault run's runtime.json; None for runs before it was recorded
+    runtime_path = os.path.join(run_dir, "runtime.json")
+    environment_id = (json.load(open(runtime_path, encoding="utf-8")).get("environment_id")
+                      if os.path.exists(runtime_path) else None)
     chaos_object = None if fault_record["fault_kind"] == "workload" else f"{fault_record['fault_kind']}/{fault_record['fault_name']}"
     record = {
         "incident_id": args.incident_id,
         "experiment_id": args.experiment_id,
         "run_id": args.run_id,
         "control_run_id": args.control_run_id,
+        "environment_id": environment_id,
         "baseline": baseline,
         "fault": {
             "injected": True,
