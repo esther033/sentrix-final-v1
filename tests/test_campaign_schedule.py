@@ -124,6 +124,23 @@ class ScheduleTests(unittest.TestCase):
             gen.render(PLAN, PARAMS, 1, 'workload/profiles/linux-v1')
 
 
+class SurgeLevelTests(unittest.TestCase):
+    def test_surge_levels_at_c6(self):
+        """0.8C / 1.0C / 4/3 C (SETUP-REVIEW 7.15) -> 4.8 / 6 / 8 tx/s at C = 6."""
+        import yaml
+        profiles, _, meta = gen.build(yaml.safe_load(PLAN.read_text()), yaml.safe_load(PARAMS.read_text()), 1, 6)
+        rates = {}
+        for p in profiles.values():
+            f = p.get('fault') or {}
+            if f.get('type') == 'traffic_surge':
+                rates.setdefault(f['load_level'], set()).add(p['traffic_phase_rps']['fault'])
+                self.assertEqual(p['control_phase_rps']['fault'], 2.4)
+                self.assertEqual({k: v for k, v in p['traffic_phase_rps'].items() if k != 'fault'},
+                                 {k: 2.4 for k in ('warmup', 'baseline', 'recovery', 'cooldown')})
+        self.assertEqual(rates, {'l1': {4.8}, 'l2': {6}, 'l3': {8}})
+        self.assertEqual(meta['baseline_tps'], 2.4)
+
+
 class PairOrderTests(unittest.TestCase):
     def args(self, order):
         return type('A', (), dict(control_id='c', fault_id='f', control_profile='cp', fault_profile='fp',

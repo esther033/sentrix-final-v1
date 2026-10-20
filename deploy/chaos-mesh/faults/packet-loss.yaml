@@ -1,6 +1,11 @@
 # NetworkChaos loss template -- dependency_edge scope, same direction
 # convention as network-delay.yaml.
-# {{NAME}}, {{SOURCE_SERVICE}}, {{TARGET_SERVICE}}, {{LOSS_PERCENT}}, {{DURATION}}
+# {{NAME}}, {{SOURCE_SERVICE}}, {{TARGET_SERVICE}}, {{LOSS_PERCENT}}, {{DURATION}}, {{TARGET_SERVICE_CLUSTER_IP}}
+# Method A (SETUP-REVIEW 7.15): callers dial the destination Service name and
+# kube-proxy (iptables) DNATs ClusterIP -> pod IP after this pod's egress tc,
+# so the pod-IP target alone never matches app traffic. externalTargets adds
+# the destination ClusterIP (looked up by run-attended.py at injection time);
+# the pod-IP target stays for direct pod-IP traffic.
 apiVersion: chaos-mesh.org/v1alpha1
 kind: NetworkChaos
 metadata:
@@ -25,4 +30,6 @@ spec:
         - sentrix
       labelSelectors:
         app: "{{TARGET_SERVICE}}"
+  externalTargets:
+    - "{{TARGET_SERVICE_CLUSTER_IP}}"
   duration: "{{DURATION}}"

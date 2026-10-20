@@ -165,14 +165,16 @@ socket count가 없다. 먼저 exporter, template, capability gate와 ground-tru
 
 | Fault | 시작 후보 | 본 campaign 고정 원칙 |
 |---|---|---|
-| CPU | worker 1, load 100, 300초 | 대상 CPU limit 대비 포화 및 throttling이 확인되는 최소 강도 |
+| CPU | worker 1, load 100, 300초 → 시험 2차 worker 4, load 100 (SETUP-REVIEW 7.15) | 대상 CPU limit 대비 포화 및 throttling이 확인되는 최소 강도 |
 | Pod failure | `pod-failure`, 300초, replica 1 | Pod UID/readiness/endpoints 변화가 확인되는 bounded failure |
-| Delay | 100 ms + jitter 10 ms, 300초 | 실제 edge RTT/span latency 상승이 확인되는 최소 강도 |
+| Delay | 100 ms + jitter 10 ms, 300초 (filter: 도착 Pod IP + 도착 Service ClusterIP, SETUP-REVIEW 7.15) | 실제 edge RTT/span latency 상승이 확인되는 최소 강도 |
 | Loss | random 2%, 300초 | qdisc drop counter와 요청 영향이 모두 관측되는 최소 강도 |
 | 정상 baseline | 지속가능 용량 C의 0.4C | 모든 surge pair의 control 및 비장애 phase |
-| Surge L1 | 0.6C | baseline보다 50% 증가한 낮은 surge |
-| Surge L2 | 0.8C | baseline의 2배인 중간 surge |
-| Surge L3 | 1.0C | 서비스 포화 경계, k6 자체 dropped가 지배하지 않는 높은 surge |
+| Surge L1 | 0.8C (이전 0.6C) | baseline의 2배인 낮은 surge |
+| Surge L2 | 1.0C (이전 0.8C) | 서비스 포화 경계(C) |
+| Surge L3 | 1.33C (이전 1.0C) | C 초과, p99가 baseline의 3배를 넘는 높은 surge |
+
+2026-10-20 변경(SETUP-REVIEW 7.15): C = 6에서 0.6C(3.6 tx/s)의 p99는 baseline과 같아 확실한 무영향이었고, 1.0C(p99 326 ms)도 3배 임계(약 360~384 ms) 아래인 경계였다. 4/3 C = 8 tx/s는 p99 545 ms(약 4.3배)로 측정됐다.
 
 현재 2 -> 5 transaction/s는 기존 환경의 값일 뿐 Linux VM에서 자동 재사용하지 않는다.
 먼저 VM의 지속 가능 용량 `C`를 측정하고 실제 achieved rate로 L1/L2/L3를 고정한다.

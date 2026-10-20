@@ -4,6 +4,9 @@
 #   probe-src -> probe-dst : the edge under test
 #   probe-src -> probe-other: must stay unaffected (filter scope)
 #   probe-cpu              : 500m CPU limit, same as the app services
+#   probe-dst / probe-other also serve HTTP on 8080 behind a ClusterIP Service of
+#   the same name, so network.sh can test the Service path the app uses
+#   (callers dial Service names; kube-proxy DNAT happens outside the pod).
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -36,7 +39,11 @@ spec:
       containers:
         - name: main
           image: __NETSHOOT__
-          command: ["sleep", "infinity"]
+          command: ["python3", "-m", "http.server", "8080", "--bind", "0.0.0.0", "--directory", "/tmp"]
+          ports: [{containerPort: 8080}]
+          readinessProbe:
+            tcpSocket: {port: 8080}
+            periodSeconds: 2
           resources: {requests: {cpu: 50m, memory: 32Mi}, limits: {cpu: 500m, memory: 128Mi}}
 ---
 apiVersion: apps/v1
@@ -51,7 +58,11 @@ spec:
       containers:
         - name: main
           image: __NETSHOOT__
-          command: ["sleep", "infinity"]
+          command: ["python3", "-m", "http.server", "8080", "--bind", "0.0.0.0", "--directory", "/tmp"]
+          ports: [{containerPort: 8080}]
+          readinessProbe:
+            tcpSocket: {port: 8080}
+            periodSeconds: 2
           resources: {requests: {cpu: 50m, memory: 32Mi}, limits: {cpu: 500m, memory: 128Mi}}
 ---
 apiVersion: apps/v1
@@ -71,3 +82,17 @@ spec:
             exec: {command: ["true"]}
             periodSeconds: 2
           resources: {requests: {cpu: 100m, memory: 32Mi}, limits: {cpu: 500m, memory: 128Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: probe-dst, namespace: sentrix-probe}
+spec:
+  selector: {app: probe-dst}
+  ports: [{port: 8080, targetPort: 8080}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: probe-other, namespace: sentrix-probe}
+spec:
+  selector: {app: probe-other}
+  ports: [{port: 8080, targetPort: 8080}]

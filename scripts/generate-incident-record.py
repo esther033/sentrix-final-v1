@@ -101,6 +101,18 @@ def compute_control_baseline(control_run_dir):
 from evaluation_v2 import impact as evaluate_impact, recovery as evaluate_recovery, assess_run, match_control
 
 
+def select_control_match(run_dir, control_dir, profile, fingerprint, summaries, control_generation):
+    """Same anchor rule as scripts/evaluate-pair.py: a fault_then_control control
+    follows the fault run, so it is matched against the fault run's end."""
+    pair_order = profile.get("pair_order") or "control_then_fault"
+    if pair_order == "fault_then_control":
+        runtime = json.load(open(os.path.join(run_dir, "runtime.json"), encoding="utf-8"))
+        match_at = datetime.fromisoformat((runtime.get("finished_at") or runtime["started_at"]).replace("Z", "+00:00"))
+    else:
+        match_at = min(datetime.fromisoformat(r["event_time"].replace("Z", "+00:00")) for r in summaries)
+    return match_control(control_dir, profile, fingerprint, match_at, control_generation, pair_order=pair_order)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-id", required=True)
@@ -137,16 +149,8 @@ def main():
     summaries = load_transactions(run_dir)
     run_assessment = assess_run(run_dir, args.data_generation)
     before = json.load(open(os.path.join(run_dir, "environment-before.json"), encoding="utf-8"))
-    # Same anchor rule as scripts/evaluate-pair.py: a fault_then_control control
-    # follows the fault run, so it is matched against the fault run's end.
-    pair_order = profile.get("pair_order") or "control_then_fault"
-    if pair_order == "fault_then_control":
-        runtime = json.load(open(os.path.join(run_dir, "runtime.json"), encoding="utf-8"))
-        match_at = datetime.fromisoformat((runtime.get("finished_at") or runtime["started_at"]).replace("Z", "+00:00"))
-    else:
-        match_at = min(datetime.fromisoformat(r["event_time"].replace("Z", "+00:00")) for r in summaries)
-    match = match_control(control_dir, profile, before["fingerprint"], match_at, args.control_data_generation,
-                          pair_order=pair_order)
+    match = select_control_match(run_dir, control_dir, profile, before["fingerprint"], summaries,
+                                 args.control_data_generation)
 
     fault_started = fault_record.get("started_at")
     fault_ended = fault_record.get("ended_at")

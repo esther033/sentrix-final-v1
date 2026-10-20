@@ -294,3 +294,48 @@ edge pod: frontend-5c676694c8-xfx5r `e2e4f7ec-fb7f-454d-8754-cfb35fb7dddf` → p
 - 스택 여유: 거래 수가 같으면 강도를 올려도 관측 데이터량은 거의 그대로다. Tempo 56 %, available 7 GiB 이상, 디스크 809 GiB로 여유가 있다. surge L3를 8 tx/s로 올리면 Tempo는 sweep의 rate 8 최대치(2403Mi, 4Gi의 59 %) 수준이 될 것이다. swap 증가 추세는 블록마다 확인한다.
 
 남은 일: delay·loss 주입 경로 수정·검증(템플릿 + capability probe), cpu workers 결정, surge 목표 결정. 그 후 시험 pair를 새 run ID(`-r02` 등)로 다시 돌리고 강도를 동결한다. `generate-incident-record.py`의 fault_then_control 회귀 테스트를 추가한다. 커밋한 `campaigns/calib-linux-v1/`, `workload/profiles/calib-linux-v1/`는 draft 시험용이다.
+
+### 7.15 5단계 보완 — delay·loss 주입 경로 수정(방법 A), CPU worker 4, surge 단계 변경 (2026-10-20)
+**네트워크 환경.** k3s 내장 kube-proxy는 **iptables** 모드다(`:10249/proxyMode` = iptables, ip_vs 모듈 없음). CNI는 k3s 내장 **flannel vxlan**(VNI 1, 브리지 `cni0`, pod 대역 10.42.0.0/16, MTU 1450, ipmasq true)이다.
+
+**가설 검증(probe 3방식 비교, `linux/out/capability-net3-20261020T040946Z/network/`).** probe-dst와 probe-other에 HTTP 서버(8080)와 ClusterIP Service를 두었다. probe-src에서 요청마다 새 TCP 연결을 여는 curl을 경로마다 60회(loss는 150회) 보내고, 주입 전·중·후를 측정했다. 값은 dst ClusterIP 경로의 median이다. loss는 실패했거나 200 ms 이상 걸린 요청의 비율이다.
+
+| 방식 | Service 경로 delay | Service 경로 loss 10 % | Pod IP 경로 | 다른 경로 | 제거 후 |
+|---|---|---|---|---|---|
+| 기존(selector=출발, target=도착 Pod, to) | 1.3 → 1.1 ms (**무효**) | 0 % (**무효**) | 202 ms / 19 % | 그대로 | 원복 |
+| A: + externalTargets = 도착 ClusterIP | 1.3 → 202 ms | 22.0 % | 202 ms / 16.7 % | 그대로 | 원복 |
+| B: selector=도착, target=출발 (응답 방향) | 1.2 → 202 ms | 10.7 % | 202 ms / 11.3 % | 그대로 | 원복 |
+
+- 가설이 확인됐다. ClusterIP → Pod IP DNAT는 출발 pod의 egress tc를 지난 뒤 일어난다. 그래서 Pod IP 필터는 앱 트래픽에 걸리지 않는다. 7.14의 delay·loss 무효과는 이 때문이다.
+- +200 ms는 새 연결이라 지연 구간을 두 번(handshake + 요청) 지나간 값이다.
+- **방법 A를 승인받았다.** 근거: 방향(호출하는 쪽 egress, 요청 방향)과 주입되는 pod(출발)가 기존과 같아 라벨과 기록 의미가 유지된다. loss 효과도 Pod IP 경로와 같은 수준이다. B는 응답만 버려서 loss가 약했다.
+
+**수정 내용.**
+- `deploy/chaos-mesh/faults/network-delay.yaml`, `packet-loss.yaml`: 기존 Pod IP target을 유지하고 `externalTargets: ["{{TARGET_SERVICE_CLUSTER_IP}}"]`를 추가했다.
+- `scripts/fault_manifest.py`(새 파일):
+  - `render()`가 치환을 맡는다. 도착 Service의 ClusterIP는 주입 직전에 `kubectl get svc`로 조회한다. 값이 없거나 IP 형식이 아니면, 또는 치환되지 않은 `{{…}}`가 남으면 주입을 거부한다.
+  - `filter_targets()`는 렌더링된 manifest에서 실제 필터(direction, 주입 selector, target selector, externalTargets)를 읽는다.
+  - `observed_targets()`는 AllInjected 시점의 Chaos Mesh containerRecords(`.` = 주입된 pod, `.Target` = 필터 대상)를 pod 객체와 맞춰 본다.
+- `scripts/run-attended.py`: `fault_manifest`를 사용하도록 바꿨다. `fault-record.json`에 `filter_targets`를 기록한다.
+  - 항목: `direction`, `injected_selector`, `target_selector`, `external_targets`, `destination_cluster_ip`, `injected_source_pods`(name/uid/IP), `target_destination_pods`, `destination_pod_ips`, `selection_consistent`.
+- `cpu-saturation.yaml`: `workers: {{WORKERS}}`, `load: {{LOAD}}`로 바꿨다. `fault-params.yaml`의 cpu params는 `WORKERS: 4, LOAD: 100`(draft)이다.
+- surge 단계 0.6/0.8/1.0C → **0.8/1.0/1.33C**(`fault-params.yaml` `load_fractions.surge_levels` l1 0.8, l2 1.0, l3 1.3333; `campaign-plan.yaml` levels; `docs/LINUX-PRODUCTION-DATASET-DESIGN.md` 표). 실제 값은 `generate-campaign.py`가 fault-params에서 읽는다. C = 6이면 4.8 / 6.0 / 8.0 tx/s다.
+  - 이유: capacity 곡선(7.13)에서 0.6C(3.6 tx/s)는 p99가 baseline과 같아 확실히 무영향이었다. 1.0C(p99 326 ms)도 3배 임계(약 360~384 ms) 아래인 경계였다. 4/3 C = 8 tx/s는 p99 545 ms(약 4.3배)로 측정됐다.
+- capability:
+  - `probe-pods.yaml`: probe-dst와 probe-other에 HTTP 서버, readiness, Service를 추가했다.
+  - `network.sh`: 기존 ping 검사는 그대로 두고 Service 경로 검사를 추가했다(`NET_TEMPLATE_METHOD` 기본 a, `NET_METHODS` 기본 같은 값).
+  - `judge.py service`: 기존 기준은 그대로다. 새 기준은 delay가 before + 80 ms 이상, 다른 경로는 + 20 ms 미만, 제거 후 + 10 ms 이하다. loss는 영향 비율 10 % 이상, 다른 경로와 제거 후는 2 % 이하다.
+- 테스트(모두 99개 OK):
+  - `tests/test_fault_manifest.py`:
+    - 생성된 edge fault 30개 모두에서 기록된 filter_targets가 렌더링된 manifest 및 치환한 ClusterIP와 같다.
+    - params가 manifest에 반영된다.
+    - ClusterIP가 없거나 placeholder가 남으면 거부한다.
+    - observed_targets의 일치·불일치 판정이 맞다.
+    - cpu WORKERS/LOAD가 반영된다.
+    - fault_then_control에서 incident-record가 뒤따르는 control을 고른다(회귀).
+  - `test_campaign_schedule.py` SurgeLevelTests: l1/l2/l3 = 4.8/6/8 tx/s, 나머지 phase는 2.4다.
+  - `generate-incident-record.py`의 control 선택 로직은 `select_control_match()`로 분리했다(동작은 같다).
+- capability 전체 재실행 PASS(`linux/out/capability-20261020T044751Z/`): cpu, pod, network(ping 8/8) 모두 통과했다. Service 경로(방법 A)는 delay 0.84 → 201.9 ms, loss 19.3 %, 다른 경로 변화 없음, 제거 후 원복. 이후 `sentrix-probe` ns를 삭제했다.
+- 참고: `scripts/run-fault-experiment.py`(M2 이전 경로, linux-v1 캠페인은 사용하지 않음)는 자체 치환을 쓴다. 그 경로로 cpu 템플릿을 쓰면 `{{WORKERS}}`가 남는다.
+
+**시험 2차 스케줄.** 기존 calib 파일을 덮어쓰지 않도록 `--campaign-id calib2-linux-v1`로 생성했다(`--seed 1 --capacity-tps 6`, profile 138개, draft). 시험 대상은 `calib2-linux-v1-{cpu-checkoutservice,delay-front-product,loss-front-product}-r02`이며 셋 다 control_then_fault다. onset은 각각 420 / 420 / 600 s, phase 합 1500 s, target_rps 2.4다.

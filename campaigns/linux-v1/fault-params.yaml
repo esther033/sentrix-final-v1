@@ -19,15 +19,21 @@ calibration_evidence: []   # e.g. [calib-linux-v1-cpu-checkoutservice-001, ...]
 capacity_tps: null
 load_fractions:
   baseline: 0.4
+  # 2026-10-20 (SETUP-REVIEW 7.15): was 0.6 / 0.8 / 1.0. At C = 6 the capacity
+  # curve gives p99 125-130 ms up to 4 tx/s and 326 ms at 6 tx/s, all under
+  # 3 x baseline p99 (~360-384 ms), so 0.6C was a certain no-impact level and
+  # 1.0C borderline. 4/3 C = 8 tx/s measured p99 545 ms (~4.3 x baseline).
   surge_levels:
-    l1: 0.6
-    l2: 0.8
-    l3: 1.0
+    l1: 0.8
+    l2: 1.0
+    l3: 1.3333   # 4/3; tps() snaps 6 x 1.3333 to 8.0 tx/s
 
 faults:
   cpu_saturation:
     template: deploy/chaos-mesh/faults/cpu-saturation.yaml
-    params: {}          # template currently fixes workers=1, load=100
+    params:             # r01 used workers=1 (no user impact, SETUP-REVIEW 7.14)
+      WORKERS: 4
+      LOAD: 100
   pod_failure:
     template: deploy/chaos-mesh/faults/pod-failure.yaml
     params: {}

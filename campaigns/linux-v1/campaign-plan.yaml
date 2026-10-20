@@ -116,13 +116,15 @@ matrix:
     repetitions: 3
     fault_cases: 9
     baseline_offered_rate: 0.4C
+    # 2026-10-20: was 0.6C / 0.8C / 1.0C (SETUP-REVIEW 7.15). The rates used are
+    # fault-params.yaml load_fractions.surge_levels; keep both in sync.
     levels:
       - id: l1
-        offered_rate: 0.6C
-      - id: l2
         offered_rate: 0.8C
-      - id: l3
+      - id: l2
         offered_rate: 1.0C
+      - id: l3
+        offered_rate: 1.33C
 
 naming:
   fault_run: linux-v1-<fault>-<target>-r<01..03>

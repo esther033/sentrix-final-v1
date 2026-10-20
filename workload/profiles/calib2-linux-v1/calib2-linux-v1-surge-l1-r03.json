@@ -1,0 +1,48 @@
+{
+  "profile_name": "calib2-linux-v1-surge-l1-r03",
+  "run_role": "fault",
+  "campaign_id": "calib2-linux-v1",
+  "pair_id": "calib2-linux-v1-surge-l1-r03",
+  "repetition": 3,
+  "cv_group": "repetition-3",
+  "schedule_index": 19,
+  "onset_offset_seconds": 540,
+  "pair_order": "fault_then_control",
+  "workload_seed": 1830008893,
+  "calibration_status": "draft",
+  "target_rps": 2.4,
+  "time_unit": "1s",
+  "duration": "25m",
+  "warmup_seconds": 180,
+  "baseline_seconds": 360,
+  "fault_seconds": 300,
+  "recovery_seconds": 540,
+  "cooldown_seconds": 120,
+  "traffic_phase_rps": {
+    "warmup": 2.4,
+    "baseline": 2.4,
+    "fault": 4.8,
+    "recovery": 2.4,
+    "cooldown": 2.4
+  },
+  "pre_allocated_vus": 15,
+  "max_vus": 202,
+  "stage_timeout": "5s",
+  "trace_workers": 2,
+  "control_phase_rps": {
+    "warmup": 2.4,
+    "baseline": 2.4,
+    "fault": 2.4,
+    "recovery": 2.4,
+    "cooldown": 2.4
+  },
+  "fault": {
+    "type": "traffic_surge",
+    "target_kind": "workload_entrypoint",
+    "template": null,
+    "params": {},
+    "root_cause_service": "frontend",
+    "load_level": "l1",
+    "scope_kind": "workload_entrypoint"
+  }
+}

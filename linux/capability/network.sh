@@ -8,6 +8,20 @@
 #                after RTT <= before + 10 ms; qdisc after == qdisc before
 #   loss 10%:    during loss >= 4 %; other path loss <= 1 %; after loss <= 1 %
 # probe-network-pod.py (pod-wide) is NOT a substitute for this edge test.
+#
+# Service path (added 2026-10-20, SETUP-REVIEW 7.15): the app dials Service
+# names, and kube-proxy DNATs ClusterIP -> pod IP in the host netns, after the
+# source pod's egress tc. ping cannot reach a ClusterIP, so each phase runs
+# N fresh HTTP requests (curl, new TCP connection each) from probe-src to the
+# probe-dst Pod IP, probe-dst ClusterIP and the probe-other ClusterIP / Pod IP.
+# Injection methods (NET_METHODS, default = NET_TEMPLATE_METHOD; the 7.15
+# comparison ran NET_METHODS="current a b"):
+#   current  selector=src, target=dst pod, direction to (template before 7.15)
+#   a        current + externalTargets: [dst ClusterIP]
+#   b        selector=dst, target=src pod, direction to (reply direction)
+# Gate: the ping checks above AND the Service-path checks for
+# NET_TEMPLATE_METHOD (default a = the method deploy/chaos-mesh/faults uses
+# since 7.15), judge.py service.
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 D="$OUT/network"; mkdir -p "$D"
 trap cleanup_chaos EXIT
@@ -66,5 +80,79 @@ remove_chaos probe-loss
 tc_state loss-after
 read -r LA_RTT LA_LOSS < <(ping_stats loss-after-dst "$DST_IP" 300)
 
+rc=0
 python3 "$HERE/judge.py" network "$D" \
-  "$B_RTT" "$B_ORTT" "$DL_RTT" "$DL_ORTT" "$DA_RTT" "$L_LOSS" "$L_OLOSS" "$LA_LOSS"
+  "$B_RTT" "$B_ORTT" "$DL_RTT" "$DL_ORTT" "$DA_RTT" "$L_LOSS" "$L_OLOSS" "$LA_LOSS" || rc=1
+
+# ---- Service path ----
+NET_TEMPLATE_METHOD="${NET_TEMPLATE_METHOD:-a}"
+NET_METHODS="${NET_METHODS:-$NET_TEMPLATE_METHOD}"
+DST=$(pod_of probe-dst)
+DST_SVC=$(kubectl -n $NS get svc probe-dst -o jsonpath='{.spec.clusterIP}')
+OTHER_SVC=$(kubectl -n $NS get svc probe-other -o jsonpath='{.spec.clusterIP}')
+echo "dst_pod=$DST_IP dst_svc=$DST_SVC other_pod=$OTHER_IP other_svc=$OTHER_SVC" > "$D/svc-addresses.txt"
+log "service path: dst_svc=$DST_SVC other_svc=$OTHER_SVC methods=[$NET_METHODS] gate=$NET_TEMPLATE_METHOD"
+
+http_probe() { # file ip count -> one line per request: time_connect time_total http_code
+  kubectl -n $NS exec "$SRC" -- sh -c "for i in \$(seq $3); do curl -s -o /dev/null --max-time 3 -w '%{time_connect} %{time_total} %{http_code}\\n' http://$2:8080/ || true; done" > "$D/$1" 2>&1 || true
+}
+probe_all() { # method phase count
+  http_probe "svc-$1-$2-dst_pod.txt" "$DST_IP" "$3"
+  http_probe "svc-$1-$2-dst_svc.txt" "$DST_SVC" "$3"
+  http_probe "svc-$1-$2-other_svc.txt" "$OTHER_SVC" "$3"
+  http_probe "svc-$1-$2-other_pod.txt" "$OTHER_IP" "$3"
+}
+tc_both() { # tag
+  for pp in "$SRC" "$DST"; do
+    echo "== $pp"; kubectl -n $NS exec "$pp" -- sh -c 'tc qdisc show; echo ---; tc filter show dev eth0 2>/dev/null; echo ---; ipset list 2>/dev/null | head -40' 2>&1 || true
+  done > "$D/svc-tc-$1.txt"
+}
+svc_chaos() { # name method action spec-line
+  local sel=probe-src tgt=probe-dst ext=""
+  case "$2" in
+    a) ext="externalTargets: [\"$DST_SVC\"]" ;;
+    b) sel=probe-dst; tgt=probe-src ;;
+  esac
+  cat > "$D/manifest-$1.yaml" <<YAML
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata: {name: $1, namespace: $NS}
+spec:
+  action: $3
+  mode: one
+  selector: {namespaces: [$NS], labelSelectors: {app: $sel}}
+  direction: to
+  target:
+    mode: one
+    selector: {namespaces: [$NS], labelSelectors: {app: $tgt}}
+  $ext
+  $4
+  duration: 900s
+YAML
+  kubectl apply -f "$D/manifest-$1.yaml" >/dev/null
+  if ! wait_cond networkchaos "$1" AllInjected 60; then
+    log "FAIL $1 not injected"; kubectl -n $NS get networkchaos "$1" -o yaml > "$D/status-$1.yaml"; return 1
+  fi
+  kubectl -n $NS get networkchaos "$1" -o yaml > "$D/status-$1-injected.yaml"
+}
+
+for m in $NET_METHODS; do
+  log "service path method=$m"
+  tc_both "$m-before"
+  probe_all "$m" before 60
+  svc_chaos "probe-svc-delay-$m" "$m" delay 'delay: {latency: "100ms", jitter: "0ms", correlation: "0"}' || { rc=1; continue; }
+  tc_both "$m-delay-during"
+  probe_all "$m" delay 60
+  remove_chaos "probe-svc-delay-$m"
+  tc_both "$m-delay-after"
+  probe_all "$m" delay-after 60
+  svc_chaos "probe-svc-loss-$m" "$m" loss 'loss: {loss: "10", correlation: "0"}' || { rc=1; continue; }
+  tc_both "$m-loss-during"
+  probe_all "$m" loss 150
+  remove_chaos "probe-svc-loss-$m"
+  tc_both "$m-loss-after"
+  probe_all "$m" loss-after 150
+done
+
+python3 "$HERE/judge.py" service "$D" "$NET_TEMPLATE_METHOD" $NET_METHODS || rc=1
+exit $rc

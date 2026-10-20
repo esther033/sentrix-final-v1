@@ -16,6 +16,7 @@ from host_state import host_clock, require_ntp, reboot_errors
 from telemetry_export import atomic_write, save_json, digest, exclusive_export
 from view_integrity import safe_name
 from workload_evidence import confirm_surge
+import fault_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 # Backend URLs come from the environment (linux/config/endpoints.env) so the
@@ -180,27 +181,21 @@ def run(args):
                     atomic_write(run_dir/"injected-manifest.yaml",yaml.safe_dump(planned,sort_keys=False))
                     fault_record={"fault_kind":kind,"fault_name":name,"type":fault['type'],"root_cause_service":fault['root_cause_service'],"started_at":now(),"ended_at":None,"removal_confidence":"scheduled_pending_actual_rate_validation","injector_status":"succeeded","target_pod_uid":None,"workload_phase":planned}
                 else:
-                    template=(ROOT/fault["template"]).read_text()
-                    # Edge faults name source and destination explicitly. The
-                    # old code substituted root_cause_service for both, which
-                    # turned an edge template into a self-loop selector.
-                    edge = fault.get("target_kind") == "dependency_edge"
-                    if edge and not (fault.get("source_service") and fault.get("destination_service")):
-                        raise ValueError("dependency_edge fault requires source_service and destination_service")
-                    substitutions={
-                        "NAME": name,
-                        "SOURCE_SERVICE": fault["source_service"] if edge else fault["root_cause_service"],
-                        "TARGET_SERVICE": fault["destination_service"] if edge else fault["root_cause_service"],
-                        "DURATION": str(profile['fault_seconds'])+'s',
-                        **fault.get('params',{}),
-                    }
-                    for key,value in substitutions.items(): template=template.replace('{{'+key+'}}',str(value))
+                    # Edge faults name source and destination explicitly (an
+                    # old self-loop bug substituted root_cause_service for both);
+                    # edge NetworkChaos also filters on the destination ClusterIP.
+                    template,substitutions=fault_manifest.render((ROOT/fault["template"]).read_text(),fault,name,profile['fault_seconds'],
+                        cluster_ip_of=lambda svc: kube('get','svc',svc,'-n','sentrix','-o','jsonpath={.spec.clusterIP}').strip())
                     kind=yaml.safe_load(template)['kind'].lower()
                     atomic_write(run_dir/"injected-manifest.yaml",template)
                     fault_record={"fault_kind":kind,"fault_name":name,"type":fault['type'],"root_cause_service":fault['root_cause_service'],"started_at":None,"ended_at":None,"removal_confidence":"unknown","injector_status":"unknown","target_pod_uid":None,
                                   "target_kind":fault.get("target_kind","service_node"),"edge_id":fault.get("edge_id"),
                                   "source_service":fault.get("source_service"),"destination_service":fault.get("destination_service"),
                                   "params":fault.get("params",{})}
+                    filters=fault_manifest.filter_targets(template)
+                    if filters is not None:
+                        filters["destination_cluster_ip"]=substitutions.get(fault_manifest.CLUSTER_IP_KEY)
+                        fault_record["filter_targets"]=filters
                 fault_record["injection_requested_at"]=now()
                 fault_record["injection_requested_elapsed_s"]=round(elapsed,3)
                 fault_record["planned_onset_offset_seconds"]=state["planned_onset_offset_seconds"]
@@ -224,10 +219,15 @@ def run(args):
                     if conditions.get('AllInjected')=='True' and not fault_record['started_at']:
                         fault_record['started_at']=now(); fault_record['raw_inject_status']=obj
                         if fault_record.get('target_kind')=='dependency_edge':
+                            by_role={}
                             for role in ('source','destination'):
                                 pods=json.loads(kube('get','pods','-n','sentrix','-l','app='+fault[role+'_service'],'-o','json'))
+                                by_role[role]=pods['items']
                                 fault_record[role+'_pod_uids']=[i['metadata']['uid'] for i in pods['items']]
                             fault_record['target_pod_uid']=(fault_record['source_pod_uids'] or [None])[0]
+                            if 'filter_targets' in fault_record:
+                                fault_record['filter_targets'].update(fault_manifest.observed_targets(
+                                    obj.get('status',{}).get('experiment',{}).get('containerRecords') or [],by_role['source'],by_role['destination']))
                         else:
                             target=json.loads(kube('get','pods','-n','sentrix','-l','app='+fault['root_cause_service'],'-o','json'))
                             fault_record['target_pod_uid']=target['items'][0]['metadata']['uid']

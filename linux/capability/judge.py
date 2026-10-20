@@ -29,6 +29,55 @@ def network(d, b_rtt, b_ortt, dl_rtt, dl_ortt, da_rtt, l_loss, l_oloss, la_loss)
     return r
 
 
+def http_stats(path):
+    """curl lines 'time_connect time_total http_code' -> n, failed, median ms, affected %.
+
+    affected = failed (non-200 / timeout) or total >= 200 ms: on a sub-ms path
+    only a retransmission (min RTO 200 ms, SYN RTO 1 s) or an injected delay
+    reaches that.
+    """
+    rows = []
+    for line in path.read_text().splitlines():
+        parts = line.split()
+        if len(parts) == 3 and re.fullmatch(r"\d+", parts[2]):
+            rows.append((float(parts[1]) * 1000, parts[2] == "200"))
+    ok = sorted(t for t, good in rows if good)
+    affected = sum(1 for t, good in rows if not good or t >= 200)
+    return {"n": len(rows), "failed": sum(1 for _, good in rows if not good),
+            "median_ms": round(ok[len(ok) // 2], 2) if ok else None,
+            "affected_pct": round(100 * affected / len(rows), 1) if rows else None}
+
+
+def service(d, gate_method, *methods):
+    """Service-path (ClusterIP) delay/loss per injection method; ping checks stay in network()."""
+    r = {"gate_method": gate_method, "methods": {}}
+    for m in methods:
+        st = {ph: {t: http_stats(d / f"svc-{m}-{ph}-{t}.txt")
+                   for t in ("dst_pod", "dst_svc", "other_svc", "other_pod")
+                   if (d / f"svc-{m}-{ph}-{t}.txt").exists()}
+              for ph in ("before", "delay", "delay-after", "loss", "loss-after")}
+        med = lambda ph, t: (st[ph].get(t) or {}).get("median_ms")
+        aff = lambda ph, t: (st[ph].get(t) or {}).get("affected_pct")
+        ge = lambda a, b: a is not None and b is not None and a >= b
+        le = lambda a, b: a is not None and b is not None and a <= b
+        b_svc, b_osvc = med("before", "dst_svc"), med("before", "other_svc")
+        checks = {
+            # fresh connection: handshake + request both cross the delayed hop -> >= +80 ms is loose
+            "svc_delay_applied": ge(med("delay", "dst_svc"), (b_svc or 0) + 80),
+            "svc_delay_scoped": le(med("delay", "other_svc"), (b_osvc or 0) + 20),
+            "svc_delay_removed": le(med("delay-after", "dst_svc"), (b_svc or 0) + 10),
+            "svc_loss_applied": ge(aff("loss", "dst_svc"), 10),
+            "svc_loss_scoped": le(aff("loss", "other_svc"), 2),
+            "svc_loss_removed": le(aff("loss-after", "dst_svc"), 2),
+        }
+        pod_path = {"pod_delay_applied": ge(med("delay", "dst_pod"), (med("before", "dst_pod") or 0) + 80),
+                    "pod_loss_applied": ge(aff("loss", "dst_pod"), 10)}
+        r["methods"][m] = {"stats": st, "checks": checks, "pod_path_info": pod_path,
+                           "service_path_pass": all(checks.values())}
+    r["checks"] = r["methods"].get(gate_method, {}).get("checks") or {"gate_method_measured": False}
+    return r
+
+
 def cpu_stat(path):
     text = path.read_text()
     first, second = text.split("---")
@@ -56,8 +105,8 @@ def pod(d, uid0, ready0, seen_false, uid1, ready1):
 if __name__ == "__main__":
     kind, d, *rest = sys.argv[1:]
     d = Path(d)
-    result = {"network": network, "cpu": cpu, "pod": pod}[kind](d, *rest)
+    result = {"network": network, "cpu": cpu, "pod": pod, "service": service}[kind](d, *rest)
     result["pass"] = all(result["checks"].values())
-    (d / "summary.json").write_text(json.dumps(result, indent=2))
+    (d / ("service-summary.json" if kind == "service" else "summary.json")).write_text(json.dumps(result, indent=2))
     print(json.dumps(result, indent=2))
     sys.exit(0 if result["pass"] else 1)
