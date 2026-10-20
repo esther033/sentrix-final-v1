@@ -1,0 +1,150 @@
+incident_id: inc-calib2-linux-v1-delay-front-product-r02
+experiment_id: exp-calib2-linux-v1-delay-front-product-r02
+run_id: calib2-linux-v1-delay-front-product-r02
+control_run_id: calib2-linux-v1-control-delay-front-product-r02
+baseline:
+  control_run_dir: /home/cloudman/Documents/sentrix-final-v1-main/scripts/../runs/calib2-linux-v1-control-delay-front-product-r02
+  target_rps: 2.4
+  n_transactions: 2883
+  success_rate_pct: 100.0
+  p50_ms: 35
+  p99_ms: 126
+fault:
+  injected: true
+  type: network_delay
+  cause_family: network
+  injection_layer: L3/L4
+  scope_kind: dependency_edge
+  scope_description: null
+  root_cause_service: frontend
+  target_pod_uid: e2e4f7ec-fb7f-454d-8754-cfb35fb7dddf
+  chaos_mesh_object: networkchaos/calib2-linux-v1-delay-front-product-r02-fault
+  started_at: '2026-10-20T07:38:12.375293+00:00'
+  ended_at: '2026-10-20T07:43:09.544584+00:00'
+  removal_confidence: confirmed
+  injector_status: succeeded
+workload:
+  profile: calib2-linux-v1-delay-front-product-r02
+  target_rps: 2.4
+  actual_rps: 2.402
+  dropped_iterations: 0
+impact:
+  confirmed: true
+  critical_failure: latency_increase
+  affected_endpoint: checkout
+  impact_started_at: '2026-10-20T07:38:12.567000+00:00'
+  evaluation_policy_version: v3
+recovery:
+  fault_removed_at: '2026-10-20T07:43:09.544584+00:00'
+  transaction_observation:
+    profile: calib2-linux-v1-delay-front-product-r02
+    first_passing_at: '2026-10-20T07:43:09.650Z'
+    stable_at: '2026-10-20T07:43:09.650Z'
+    observation_status: pass
+  evaluation_policy_version: v3
+status: recovered
+data_views:
+  raw: runs/calib2-linux-v1-delay-front-product-r02/raw-v2/
+  canonical: runs/calib2-linux-v1-delay-front-product-r02/canonical-v2-24e792abf4a4/
+  re2_compatible: runs/calib2-linux-v1-delay-front-product-r02/re2-v2-24e792abf4a4/
+data_generation: v2
+data_validation:
+  run:
+    complete: true
+    raw_export_complete: true
+    views:
+      raw: raw-v2
+      canonical: canonical-v2-24e792abf4a4
+      re2_compatible: re2-v2-24e792abf4a4
+  control:
+    complete: true
+    raw_export_complete: true
+    views:
+      raw: raw-v2
+      canonical: canonical-v2-6f9939ce8871
+      re2_compatible: re2-v2-6f9939ce8871
+validity:
+  injector_succeeded: true
+  removal_confirmed: true
+  telemetry_present_all_signals: true
+  actual_rate_meets_minimum: true
+  runtime_assessment:
+    valid: true
+    errors: []
+    actual_rps: 2.402
+    elapsed_s: 1500.0
+    started_at: '2026-10-20T07:31:07.566Z'
+    ended_at: '2026-10-20T07:56:07.566Z'
+    fingerprint: c0b9b2165a8aa62d62da3fb102156201bb78fa6ce4187d38728527cad0139894
+    profile:
+      profile_name: calib2-linux-v1-delay-front-product-r02
+      run_role: fault
+      campaign_id: calib2-linux-v1
+      pair_id: calib2-linux-v1-delay-front-product-r02
+      repetition: 2
+      cv_group: repetition-2
+      schedule_index: 3
+      onset_offset_seconds: 420
+      pair_order: control_then_fault
+      workload_seed: 1596188222
+      calibration_status: draft
+      target_rps: 2.4
+      time_unit: 1s
+      duration: 25m
+      warmup_seconds: 180
+      baseline_seconds: 240
+      fault_seconds: 300
+      recovery_seconds: 660
+      cooldown_seconds: 120
+      traffic_phase_rps:
+        warmup: 2.4
+        baseline: 2.4
+        fault: 2.4
+        recovery: 2.4
+        cooldown: 2.4
+      pre_allocated_vus: 15
+      max_vus: 80
+      stage_timeout: 5s
+      trace_workers: 2
+      fault:
+        type: network_delay
+        target_kind: dependency_edge
+        template: deploy/chaos-mesh/faults/network-delay.yaml
+        params:
+          LATENCY: 100ms
+          JITTER: 10ms
+        root_cause_service: frontend
+        edge_id: front-product
+        source_service: frontend
+        destination_service: productcatalogservice
+        scope_kind: dependency_edge
+    expected_transactions: 3600.0
+    phase_plan:
+    - !!python/tuple
+      - warmup
+      - 180
+      - 2.4
+    - !!python/tuple
+      - baseline
+      - 240
+      - 2.4
+    - !!python/tuple
+      - fault
+      - 300
+      - 2.4
+    - !!python/tuple
+      - recovery
+      - 660
+      - 2.4
+    - !!python/tuple
+      - cooldown
+      - 120
+      - 2.4
+  control_match:
+    valid: true
+    errors: []
+  dropped_iterations_under_threshold: true
+  raw_export_complete: true
+  data_views_complete: true
+  control_data_views_complete: true
+  is_valid_run: true

@@ -276,7 +276,10 @@ def run(args):
         assessment=assess_run(run_dir,control=not bool(fault))
         save_json(run_dir/'run-assessment-v2.json',assessment)
         if fault and not args.defer_control_match:
-            stage('scripts/generate-incident-record.py',['--incident-id','inc-'+args.run_id,'--experiment-id','exp-'+args.run_id,'--control-run-id',args.control_run_id],180)
+            # 900 s, was 180: validate_views re-hashes both runs (~7,250 files,
+            # 2.4 GiB for 25-min 0.4C runs); with a cold page cache on the 206-40
+            # HDD this took >180 s (calib2 cpu r02, SETUP-REVIEW 7.16) vs 5.5 s warm.
+            stage('scripts/generate-incident-record.py',['--incident-id','inc-'+args.run_id,'--experiment-id','exp-'+args.run_id,'--control-run-id',args.control_run_id],900)
         state['finished_at']=now(); state['assessment_valid']=assessment['valid']
         state['phase']='finished'
         state['complete']=bool(assessment['valid'] and not state['errors'] and all(v==0 for v in state['steps'].values()))

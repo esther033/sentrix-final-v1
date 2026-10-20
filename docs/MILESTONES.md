@@ -18,7 +18,7 @@
 | 수집 준비 | S2. 스택 배포·검증 | 완료 | 10/16 |
 | 수집 준비 | S3. 장애 주입 검증 (capability) | 완료 | 10/16 |
 | 수집 준비 | S4. 처리 용량 C 측정 | 완료 (C = 6 tx/s) | 10/16~19 |
-| 수집 준비 | **S5. 시험 pair 4개** | **진행 중** | 10/19~20 |
+| 수집 준비 | **S5. 시험 pair 4개 + 2차 3개** | **진행 중** (loss 주입 확인 남음) | 10/19~20 |
 | 수집 준비 | S6. 강도 동결·정식 스케줄 | 남음 | 10/20~21 |
 | 수집 | S7. 첫 정식 pair | 남음 | 10/21 |
 | 수집 | S8. Tier 1 (cpu·delay·loss 45 pair) | 남음 | 10/21~11/2 |
@@ -137,6 +137,15 @@
 | 강도 확정안 제안 | fault별 유지/상향 근거, surge 단계별 예상 |
 
 산출물: 시험 run 8개, 강도 제안, SETUP-REVIEW 기록. 예상 약 7시간(점검 40분 + pair 4개 × 95분).
+
+**진행 상황 (10/20 기준, SETUP-REVIEW 7.14~7.16).**
+- 1차 r01(4 pair, 7.14): 완료. 사용자 영향은 pod_failure만 있었다. delay·loss는 무효과였는데, 원인은 Service ClusterIP 경로가 tc 필터에 걸리지 않은 것이다. cpu(worker 1)는 영향이 없었다.
+- 보완(7.15): edge NetworkChaos에 도착 ClusterIP를 externalTargets로 추가했다(방법 A, 승인). cpu는 WORKERS/LOAD 파라미터(4/100)로 바꿨다. surge 단계는 0.8/1.0/1.33C다. capability가 Service 경로까지 검사한다. 커밋 `d0daa87`.
+- 2차 r02(`calib2-linux-v1`, 7.16):
+  - cpu-checkoutservice-r02: 영향 있음(latency, 짧은 스파이크). pair는 후처리 deadline(HDD cold cache)으로 failed이고, deadline을 180 → 900 s로 수정했다.
+  - delay-front-product-r02: 호출당 약 +100 ms(p50 0.1 → 114 ms), 다른 edge는 ≤ +1.4 ms, 사용자 영향 큼(p50 3.2 s).
+  - loss-front-product-r02: 주입은 succeeded로 기록됐으나 span에 손실 흔적이 전혀 없다. app 경로 적용 여부 진단이 필요하고, 5 %는 그 뒤의 후보다.
+- 남은 일: loss 적용 진단(60 s 주입 + tc/ipset/nstat 덤프), 강도 확정안 승인(S6).
 
 ---
 

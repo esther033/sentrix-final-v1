@@ -339,3 +339,49 @@ edge pod: frontend-5c676694c8-xfx5r `e2e4f7ec-fb7f-454d-8754-cfb35fb7dddf` → p
 - 참고: `scripts/run-fault-experiment.py`(M2 이전 경로, linux-v1 캠페인은 사용하지 않음)는 자체 치환을 쓴다. 그 경로로 cpu 템플릿을 쓰면 `{{WORKERS}}`가 남는다.
 
 **시험 2차 스케줄.** 기존 calib 파일을 덮어쓰지 않도록 `--campaign-id calib2-linux-v1`로 생성했다(`--seed 1 --capacity-tps 6`, profile 138개, draft). 시험 대상은 `calib2-linux-v1-{cpu-checkoutservice,delay-front-product,loss-front-product}-r02`이며 셋 다 control_then_fault다. onset은 각각 420 / 420 / 600 s, phase 합 1500 s, target_rps 2.4다.
+
+### 7.16 5단계 시험 pair 2차 결과 (calib2-linux-v1, 2026-10-20)
+
+queue는 `campaigns/calib2-linux-v1/schedule.json --allow-draft --stop-before 21:00`으로 tmux에서 돌렸다. 세 pair 모두 control_then_fault, target_rps 2.4다. 분석은 `runs/_campaign/calib2-linux-v1/analysis/<pair>.json`(`analyze-pair.py`)에 있다. edge 지연은 Tempo client span 기준이다. pre는 주입 전 240 s, during은 AllInjected부터 AllRecovered까지, post는 제거 60~300 s 후다.
+
+| pair | 상태 | 소요 | 크기 | Tempo 최대 | swap 최대 |
+|---|---|---|---|---|---|
+| cpu-checkoutservice-r02 | **failed**(fault run 후처리 deadline, 아래) | 약 93분 | 5,093 MiB | 2,285 Mi | 800 MiB |
+| delay-front-product-r02 | complete, 두 run assessment valid | 93.1분 | 5,171 MiB | 2,199 Mi | 851 MiB |
+| loss-front-product-r02 | complete, 두 run assessment valid | 93.2분 | 5,169 MiB | 2,342 Mi | 854 MiB |
+
+최소 가용 메모리는 6.4~7.2 GiB였다. 디스크 사용은 74 GiB(9 %)다.
+
+**cpu r02 실패와 수정.**
+- fault run의 run 안 incident-record 단계가 180 s deadline을 넘겼다(15:34:33~15:37:35 KST). 그래서 runtime.json에 오류가 남고 pair가 failed가 됐다.
+- 원인: `/`(runs, k3s 데이터)가 회전형 HDD(sda TOSHIBA DT01ACA100)다. validate_views가 두 run의 산출물 약 7,250개(2.4 GiB)를 cold cache로 다시 해시하는 데 180 s 넘게 걸렸다. 수동 재실행(warm cache)은 5.5 s였다(`audits/pair-calib2-linux-v1-cpu-checkoutservice-r02/incident-record-manual-after-deadline.log`).
+- 수정: `scripts/run-attended.py`의 incident-record deadline을 180 → 900 s로 바꿨다. pair는 failed로 두었다(runtime.json 미수정, ID 재사용 없음). queue.log에 NOTE를 남기고 delay·loss만 다시 돌렸다. 그 뒤 두 pair는 이 단계에서 문제가 없었다.
+- workload, 주입·제거, pipeline은 모두 정상이었다. 두 run의 assessment도 valid다. 그래서 효과 분석에는 이 데이터를 그대로 썼다.
+
+**cpu (worker 4, load 100).**
+- checkoutservice CPU 0.004 → 0.296 core. throttled period 비율은 0 → 0.91이다. throttled 시간은 1.97 s/s로 r01(worker 1)의 0.38 s/s보다 크다.
+- frontend→checkout p50/p90/p99: 4.5/9.9/72 → 28.4/91.7/164 ms. checkout에서 나가는 호출의 p99는 1~4 → 48~63 ms다.
+- 사용자 영향: evaluation_v2가 **impacted**(latency_increase)로 판정했다. 다만 fault 구간 전체로는 p99 214 ms로 임계 483 ms 아래다. 판정은 짧은 스파이크(최악 30 s 창 p99 2,064 ms) 때문이다. success는 100 %다.
+
+**delay (100 ms, jitter 10 ms, 방법 A).**
+- `filter_targets` 기록:
+  - direction to, 주입 pod는 frontend-5c676694c8-xfx5r(10.42.0.70).
+  - 필터 대상은 ClusterIP 10.43.82.246과 productcatalog pod IP 10.42.0.67이다.
+  - `selection_consistent: true`.
+- **호출당 지연은 약 +100 ms다.** frontend→productcatalog p10 99.8 ms, p50 0.1 → 114.4 ms, p90 168, p99 195 ms, 오류 0이다. GetProduct와 ListProducts가 같다. gRPC는 연결을 재사용하므로 지연 구간을 한 번만 지난다. capability의 +200 ms는 새 연결이라 두 번 지난 값이다.
+- **다른 edge:** recommendation→productcatalog p50 0.3 → 0.8 ms, frontend→currency 0.7 → 1.7 ms, 나머지 edge는 +0.2~1.4 ms였다. 200 ms 이상이나 오류는 없었다. control은 변화가 없었다. 이 작은 상승의 원인은 확인하지 못했다(tc 대상은 아니다).
+- 제거 후 p50 0.1 ms로 원복했다.
+- 사용자 영향: **impacted**(latency_increase, 주입 직후). p50 35 → 3,210 ms, p99 126 → 3,590 ms다. 페이지 하나가 productcatalog를 30번가량 직렬로 부르기 때문이다.
+- 강도가 크다. 다만 이번 단계에서는 강도를 바꾸지 않았다.
+
+**loss (2 %, correlation 25, 방법 A).** 결과는 **효과 없음**이다.
+- 주입은 정상으로 기록됐다. AllInjected 09:19:12Z, AllRecovered 09:24:11Z(confirmed), injector succeeded. `filter_targets`는 delay와 같다(ClusterIP 10.43.82.246, pod IP 10.42.0.67, selection_consistent true). 살아 있는 object의 spec도 의도대로다.
+- frontend→productcatalog 17,925 호출이 pre와 같았다. p50 0.1, p99 0.8 ms, mean 0.17 ms, 최대 4.8 ms, 오류 0이다. 5 ms를 넘는 호출은 0개였다. 다른 edge도 변화가 없다.
+- 사용자 영향: 없음(incident status `fault_active_no_impact`). p99 124 ms, 최악 30 s 창 208 ms다.
+- **2 % loss가 실제로 걸렸다면 이 결과는 나오기 어렵다.** 요청 세그먼트 약 360개가 버려졌을 것이다. 연결당 동시 요청이 거의 없으므로 회복은 TLP나 RTO에 기대야 하고, 그러면 최소 수 ms에서 200 ms가 더해진다. 즉 이번 run에서는 app 경로에 loss가 적용되지 않았을 가능성이 높다.
+- 같은 템플릿 구조의 delay는 같은 pod에 적용됐고, capability probe의 loss 10 %도 적용됐다. 원인은 사후에 확인할 수 없었다. run 폴더에는 주입 중 tc 상태가 남지 않고, chaos-daemon 로그도 이미 회전됐다.
+- **제안만 한다(실행하지 않음).** 5 %로 올리기 전에 진단을 먼저 한다.
+  1. frontend→productcatalog에 loss 2 %를 짧게(60 s) 주입하고, 그동안 frontend netns의 `tc qdisc/filter`, ipset, `nstat` TcpRetransSegs를 덤프한다.
+  2. run-attended가 AllInjected 시점에 출발 pod의 tc·ipset 상태를 fault-record에 남기게 한다.
+  - 강도를 올리는 것만으로는 해결되지 않는다. 2 %가 실제로 걸렸다면 페이지 하나의 productcatalog 직렬 호출 약 30번 중 하나 이상이 손실될 확률은 1 − 0.98^30 ≈ 45 %다. 그러면 TLP/RTO 지연이 이미 span과 사용자 p99에 보였어야 한다.
+  - 5 %(1 − 0.95^30 ≈ 79 %)는 진단에서 2 %가 적용된 것이 확인됐는데도 사용자 영향(p99 > baseline × 3)이 약할 때 올릴 다음 후보로만 둔다.
