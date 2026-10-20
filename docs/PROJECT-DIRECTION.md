@@ -1,7 +1,9 @@
 # SentriX Final — 통합 방향 및 계획 (Online Boutique 단일 대상)
 
 결정일: 2026-10-16
-상태: **현재 기준 문서.** 팀 내부 브리프("SentriX Final — 프로젝트 컨텍스트 및 개발 방향")와 `sentrix-project-context.md`가 이 문서와 충돌하면 이 문서를 따른다. 두 문서의 원칙(case≠window, leakage 방지, 조사 후 구현, 재현성, 불필요한 복잡성 회피)은 그대로 유지한다.
+> **2026-10-19:** 이 문서의 내용은 루트 [`sentrix-project-context.md`](../sentrix-project-context.md)로 흡수됐다. 특히 10절 계획(축소안 포함)은 더 이상 유효하지 않다. 현재 계획은 [`docs/MILESTONES.md`](MILESTONES.md).
+
+상태(2026-10-16 당시): **현재 기준 문서.** 팀 내부 브리프("SentriX Final — 프로젝트 컨텍스트 및 개발 방향")와 `sentrix-project-context.md`가 이 문서와 충돌하면 이 문서를 따른다. 두 문서의 원칙(case≠window, leakage 방지, 조사 후 구현, 재현성, 불필요한 복잡성 회피)은 그대로 유지한다.
 
 ## 1. 결정
 
