@@ -18,7 +18,7 @@
 | 수집 준비 | S2. 스택 배포·검증 | 완료 | 10/16 |
 | 수집 준비 | S3. 장애 주입 검증 (capability) | 완료 | 10/16 |
 | 수집 준비 | S4. 처리 용량 C 측정 | 완료 (C = 6 tx/s) | 10/16~19 |
-| 수집 준비 | **S5. 시험 pair 4개 + 2차 3개** | **진행 중** (loss 주입 확인 남음) | 10/19~20 |
+| 수집 준비 | **S5. 시험 pair 4개 + 2차 3개** | **진행 중** (loss 해결, 강도 동결 대기) | 10/19~22 |
 | 수집 준비 | S6. 강도 동결·정식 스케줄 | 남음 | 10/20~21 |
 | 수집 | S7. 첫 정식 pair | 남음 | 10/21 |
 | 수집 | S8. Tier 1 (cpu·delay·loss 45 pair) | 남음 | 10/21~11/2 |
@@ -145,7 +145,10 @@
   - cpu-checkoutservice-r02: 영향 있음(latency, 짧은 스파이크). pair는 후처리 deadline(HDD cold cache)으로 failed이고, deadline을 180 → 900 s로 수정했다.
   - delay-front-product-r02: 호출당 약 +100 ms(p50 0.1 → 114 ms), 다른 edge는 ≤ +1.4 ms, 사용자 영향 큼(p50 3.2 s).
   - loss-front-product-r02: 주입은 succeeded로 기록됐으나 span에 손실 흔적이 전혀 없다. app 경로 적용 여부 진단이 필요하고, 5 %는 그 뒤의 후보다.
-- 남은 일: loss 적용 진단(60 s 주입 + tc/ipset/nstat 덤프), 강도 확정안 승인(S6).
+- 강도 승인(10/22, 동결 전): cpu worker 4 / load 100, delay 100 ms / jitter 10 ms, pod-failure 그대로, surge 0.8/1.0/1.33C.
+- loss 진단(7.17, 10/22): 커널 7.0 netem이 상관 loss(`loss 2% 25%`)에서 하나도 버리지 않았다. 템플릿 correlation을 0으로 바꿨다. capability에 netem drop 검사를 추가했다(corr 25면 FAIL, 수정 후 PASS). run-attended가 fault-record에 출발 pod의 tc·ipset·nstat 증거를 남긴다.
+- 3차(`calib3-linux-v1-loss-front-product-r02`): complete/valid. drop 2.04 %, 재전송 +997, frontend→productcatalog p99 0.8 → 205 ms, 사용자 p50/p99 35/129 → 104/521 ms(impacted). 2 % 유지, 5 % 제안 없음.
+- 남은 일: 강도 동결·정식 스케줄·shard(S6, 지시 대기).
 
 ---
 

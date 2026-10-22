@@ -17,6 +17,7 @@ from telemetry_export import atomic_write, save_json, digest, exclusive_export
 from view_integrity import safe_name
 from workload_evidence import confirm_surge
 import fault_manifest
+import netns_evidence
 
 ROOT = Path(__file__).resolve().parents[1]
 # Backend URLs come from the environment (linux/config/endpoints.env) so the
@@ -228,11 +229,22 @@ def run(args):
                             if 'filter_targets' in fault_record:
                                 fault_record['filter_targets'].update(fault_manifest.observed_targets(
                                     obj.get('status',{}).get('experiment',{}).get('containerRecords') or [],by_role['source'],by_role['destination']))
+                            if fault_record['fault_kind']=='networkchaos':
+                                # what the kernel has, not just the injector's status (SETUP-REVIEW 7.17)
+                                injected={p['name'] for p in fault_record.get('filter_targets',{}).get('injected_source_pods') or []}
+                                fault_record['netns_evidence']={'at_injected':[netns_evidence.capture(kube,p['metadata']['name'],p['metadata']['uid'])
+                                    for p in by_role['source'] if not injected or p['metadata']['name'] in injected]}
                         else:
                             target=json.loads(kube('get','pods','-n','sentrix','-l','app='+fault['root_cause_service'],'-o','json'))
                             fault_record['target_pod_uid']=target['items'][0]['metadata']['uid']
                         # Chaos Mesh records the pods it actually selected.
                         fault_record['chaos_selected_records']=obj.get('status',{}).get('experiment',{}).get('containerRecords')
+                    ne=fault_record.get('netns_evidence')
+                    if ne is not None and 'before_removal' not in ne and not conditions.get('AllRecovered')=='True' \
+                            and elapsed-state['fault_apply_elapsed']>=profile['fault_seconds']-15:
+                        # netem counters near the end of the fault window show whether packets were really delayed/dropped
+                        ne['before_removal']=[netns_evidence.capture(kube,ev['pod'],ev['pod_uid']) for ev in ne['at_injected']]
+                        ne['verdict']=netns_evidence.summarize(ne['before_removal'],'loss' if fault['type']=='packet_loss' else 'delay',ne['at_injected'])
                     if fault_record['started_at'] and conditions.get('AllRecovered')=='True':
                         fault_record['ended_at']=now(); fault_record['removal_confidence']='confirmed'; fault_record['injector_status']='succeeded'; fault_record['raw_removal_response']=obj
                 save_json(run_dir/'fault-record.json',fault_record)

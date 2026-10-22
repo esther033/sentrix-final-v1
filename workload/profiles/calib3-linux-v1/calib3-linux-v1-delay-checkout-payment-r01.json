@@ -1,0 +1,46 @@
+{
+  "profile_name": "calib3-linux-v1-delay-checkout-payment-r01",
+  "run_role": "fault",
+  "campaign_id": "calib3-linux-v1",
+  "pair_id": "calib3-linux-v1-delay-checkout-payment-r01",
+  "repetition": 1,
+  "cv_group": "repetition-1",
+  "schedule_index": 67,
+  "onset_offset_seconds": 720,
+  "pair_order": "control_then_fault",
+  "workload_seed": 1706330849,
+  "calibration_status": "draft",
+  "target_rps": 2.4,
+  "time_unit": "1s",
+  "duration": "25m",
+  "warmup_seconds": 180,
+  "baseline_seconds": 540,
+  "fault_seconds": 300,
+  "recovery_seconds": 360,
+  "cooldown_seconds": 120,
+  "traffic_phase_rps": {
+    "warmup": 2.4,
+    "baseline": 2.4,
+    "fault": 2.4,
+    "recovery": 2.4,
+    "cooldown": 2.4
+  },
+  "pre_allocated_vus": 15,
+  "max_vus": 80,
+  "stage_timeout": "5s",
+  "trace_workers": 2,
+  "fault": {
+    "type": "network_delay",
+    "target_kind": "dependency_edge",
+    "template": "deploy/chaos-mesh/faults/network-delay.yaml",
+    "params": {
+      "LATENCY": "100ms",
+      "JITTER": "10ms"
+    },
+    "root_cause_service": "checkoutservice",
+    "edge_id": "checkout-payment",
+    "source_service": "checkoutservice",
+    "destination_service": "paymentservice",
+    "scope_kind": "dependency_edge"
+  }
+}

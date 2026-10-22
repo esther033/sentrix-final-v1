@@ -48,6 +48,20 @@ def http_stats(path):
             "affected_pct": round(100 * affected / len(rows), 1) if rows else None}
 
 
+def netem_drop_pct(path, pod_prefix="probe-src"):
+    """netem drop % on one probe pod from a `tc -s qdisc` dump (svc-tc-*.txt)."""
+    if not path.exists():
+        return None
+    blocks = re.split(r"^== ", path.read_text(), flags=re.M)
+    for b in blocks:
+        if b.startswith(pod_prefix):
+            m = re.search(r"qdisc netem .*\n\s*Sent \d+ bytes (\d+) pkt \(dropped (\d+)", b)
+            if m:
+                sent, dropped = int(m.group(1)), int(m.group(2))
+                return round(100 * dropped / (sent + dropped), 2) if sent + dropped else None
+    return None
+
+
 def service(d, gate_method, *methods):
     """Service-path (ClusterIP) delay/loss per injection method; ping checks stay in network()."""
     r = {"gate_method": gate_method, "methods": {}}
@@ -69,10 +83,14 @@ def service(d, gate_method, *methods):
             "svc_loss_applied": ge(aff("loss", "dst_svc"), 10),
             "svc_loss_scoped": le(aff("loss", "other_svc"), 2),
             "svc_loss_removed": le(aff("loss-after", "dst_svc"), 2),
+            # the kernel really dropped packets (loss 10 % asked; half is the floor).
+            # Catches netem correlated loss that drops far less than asked (7.17).
+            "svc_loss_netem_drops": ge(netem_drop_pct(d / f"svc-tc-{m}-loss-end.txt"), 5),
         }
         pod_path = {"pod_delay_applied": ge(med("delay", "dst_pod"), (med("before", "dst_pod") or 0) + 80),
                     "pod_loss_applied": ge(aff("loss", "dst_pod"), 10)}
         r["methods"][m] = {"stats": st, "checks": checks, "pod_path_info": pod_path,
+                           "netem_drop_pct_src": netem_drop_pct(d / f"svc-tc-{m}-loss-end.txt"),
                            "service_path_pass": all(checks.values())}
     r["checks"] = r["methods"].get(gate_method, {}).get("checks") or {"gate_method_measured": False}
     return r

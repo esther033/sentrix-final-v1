@@ -385,3 +385,58 @@ queue는 `campaigns/calib2-linux-v1/schedule.json --allow-draft --stop-before 21
   2. run-attended가 AllInjected 시점에 출발 pod의 tc·ipset 상태를 fault-record에 남기게 한다.
   - 강도를 올리는 것만으로는 해결되지 않는다. 2 %가 실제로 걸렸다면 페이지 하나의 productcatalog 직렬 호출 약 30번 중 하나 이상이 손실될 확률은 1 − 0.98^30 ≈ 45 %다. 그러면 TLP/RTO 지연이 이미 span과 사용자 p99에 보였어야 한다.
   - 5 %(1 − 0.95^30 ≈ 79 %)는 진단에서 2 %가 적용된 것이 확인됐는데도 사용자 영향(p99 > baseline × 3)이 약할 때 올릴 다음 후보로만 둔다.
+
+### 7.17 loss 진단 — 커널 7.0 netem의 상관(correlation) loss 불량, 템플릿 수정, 3차 시험 (2026-10-22)
+
+**진단 방법.** `linux/capability/edge-fault-diag.py`를 새로 만들었다.
+- calib2 profile의 정식 템플릿을 `fault_manifest.render`로 60 s짜리로 렌더링해 주입한다(run-attended와 같은 경로).
+- 주입하는 동안 frontend 페이지(`/`, `/product/<id>`)에 약 6 req/s 부하를 준다.
+- frontend pod netns를 chaos-daemon nsexec으로 덤프한다. 대상은 `tc -s qdisc/class/filter`, ipset, iptables mangle, nstat이고, 주입 전, 주입 중 3회(+5/+30/+52 s), 제거 후에 남긴다.
+- chaos-daemon 로그는 AllInjected 직후와 제거 후에 저장한다.
+- 증거는 `linux/out/diag-edge-20261022t*-<tag>/`에 있다.
+
+| 주입(netem 파라미터) | netem 카운터(주입 끝 무렵) | TcpRetransSegs 증가 | 페이지 p50 / p99, ≥200 ms |
+|---|---|---|---|
+| delay 100 ms 10 ms 25 %(기준) | sent 1,459 pkt | 0 | 14 → **672** ms / 62 → 2,113 ms, 70 % |
+| **loss 2 % 25 %(정식 템플릿)** | sent 4,873, **dropped 0** | **0** | 13.6 → 13.7 / 22.9 → 24.7 ms, 0 % |
+| loss 2 % 0 %(correlation 0) | sent 4,765, dropped 87(**1.79 %**) | 64 | 14.6 → 13.9 / 124 → 224 ms, 7.7 % |
+| loss 10 % 25 % | sent 4,656, dropped 75(1.6 %) | 60 | 13.5 → 13.8 / 22.7 → 425 ms, 6.6 % |
+
+- 정식 템플릿의 loss 주입은 의도대로 적용됐다. netem은 prio 1:4 밑에 있었고, ipset에는 ClusterIP 10.43.82.246과 pod IP 10.42.0.67이 들어 있었다. 트래픽도 netem을 지났다(sent 4,873). chaos-daemon 로그에 오류는 없었다(`add tc netem:{loss:2 loss_corr:25}`).
+- **그런데 netem이 하나도 버리지 않았다.** correlation 25를 붙이면 커널 7.0.0-38의 netem은 loss 2 %에서 0 %, loss 10 %에서 1.6 %만 버렸다. correlation 0이면 설정값대로(1.79 %) 버렸다.
+- **원인: 이 커널에서 netem의 상관 loss(`loss P% C%`)가 설정값보다 훨씬 적게 버린다.** calib2 loss r02가 무효과였던 것과 capability loss 10 %가 통과한 것(10 %에서는 일부가 버려져 ping 손실이 보였다)이 모두 이것으로 설명된다.
+- tc filter는 주입 중에도 비어 있다. Chaos Mesh는 iptables mangle(ipset match)로 band를 고르므로 정상이다.
+
+**수정.**
+- `deploy/chaos-mesh/faults/packet-loss.yaml`: correlation "25" → "0", 근거 주석 추가. pod 단위 템플릿(`packet-loss-pod.yaml`)은 원래 0이었다.
+- capability(`linux/capability/network.sh`, `judge.py`):
+  - Service 경로 loss가 템플릿의 correlation 값을 읽어 그대로 쓴다(`LOSS_CORR`로 덮어쓸 수 있음, 값은 `svc-addresses.txt`에 기록).
+  - 제거 직전 `tc -s qdisc`를 저장하고, 새 검사 `svc_loss_netem_drops`를 추가했다. probe-src netem의 drop 비율이 loss 10 %에서 5 % 이상이어야 한다.
+  - 검증: `LOSS_CORR=25`이면 **FAIL**(drop 1.84 %, svc_loss_applied도 False, `linux/out/capability-corr25-20261022T070610Z/`). 수정한 템플릿으로 run-all을 돌리면 **전체 PASS**(drop 9.64 %, `linux/out/capability-20261022T071229Z/`).
+- 주입 증거(`scripts/netns_evidence.py`, `scripts/run-attended.py`):
+  - edge NetworkChaos run은 fault-record.json의 `netns_evidence`에 출발 pod netns의 tc qdisc/class/filter, ipset, nstat을 남긴다.
+  - 남기는 시점은 `at_injected`(AllInjected 직후)와 `before_removal`(제거 15 s 전)이다.
+  - `verdict`에는 netem 존재, 파라미터, sent/dropped/drop_pct, applied(loss: dropped > 0, delay: sent > 0), TCP 카운터 변화(`tcp_delta`)가 들어간다.
+  - 기록만 하고 run을 실패시키지 않는다. 캡처 오류도 기록한다.
+  - 테스트는 `tests/test_netns_evidence.py`(6개)이고, 전체 115개가 통과했다.
+- **남은 점(바꾸지 않음):** `network-delay.yaml`도 correlation "25"다(jitter 상관). delay는 진단과 calib2에서 정상 적용됐고 강도도 승인됐으므로 그대로 두었다. 다만 커널 7.0에서 jitter 분포가 설정과 다를 수 있다.
+
+**3차 시험 `calib3-linux-v1-loss-front-product-r02`.**
+- 스케줄은 `--seed 1 --campaign-id calib3-linux-v1 --capacity-tps 6`(draft)으로 만들었고, `--only`로 이 pair 하나만 tmux에서 돌렸다.
+- control_then_fault, onset 600, LOSS_PERCENT 2, target_rps 2.4, 16:27~17:58 KST.
+- complete, 두 run 모두 pipeline complete이고 assessment valid다. `environment_id` 206-40.
+- 분석: `runs/_campaign/calib3-linux-v1/analysis/calib3-linux-v1-loss-front-product-r02.json`.
+- 주입 증거(`netns_evidence`):
+  - netem `loss 2%`, ipset에 ClusterIP·pod IP가 있었다.
+  - 제거 직전 sent 55,385 / **dropped 1,155(2.04 %)**, `applied: true`.
+  - TcpRetransSegs **+997**(TcpOutSegs +154,807), FastRetrans +665, LossProbes +334, Timeouts +25.
+- frontend→productcatalog span(pre → during → post):
+  - p50 0.1 → 0.1 → 0.1 ms, p90 0.3 → 0.5 → 0.3, **p99 0.8 → 205 → 0.8 ms**, mean 0.2 → 4.3 ms.
+  - ≥200 ms 0.01 → **1.64 %** → 0 %, 오류 0.
+  - control 같은 구간과 calib2 r02 fault는 p99 0.8 ms로 변화가 없었다.
+- 다른 edge는 p99 변화가 +0.3 ms 이하다(frontend→currency 34.9 → 36.4는 control 변동 범위 안).
+- 사용자 영향: evaluation_v2 **impacted**(latency_increase, 08:23:03Z, 주입 직후).
+  - fault 구간 p50 35 → **104 ms**, p99 129 → **521 ms**(임계 387 ms). 최악 30 s 창 p99는 655 ms다.
+  - success 100 %, incident status `recovered`.
+  - 손실된 요청은 TLP/RTO(약 200 ms)로 회복된다. 페이지 하나의 직렬 호출 약 30번 중 하나에 걸리면 페이지가 느려진다.
+- **결론: 2 %가 적용됐고 사용자 영향도 임계를 넘는다. 따라서 5 %는 제안하지 않는다.** 강도 동결은 하지 않았다.

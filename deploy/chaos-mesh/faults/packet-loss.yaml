@@ -6,6 +6,10 @@
 # so the pod-IP target alone never matches app traffic. externalTargets adds
 # the destination ClusterIP (looked up by run-attended.py at injection time);
 # the pod-IP target stays for direct pod-IP traffic.
+# correlation "0" (SETUP-REVIEW 7.17): on 206-40 (kernel 7.0) netem's
+# correlated loss dropped far less than asked -- "loss 2% 25%" dropped 0 of
+# 2849 packets, "10% 25%" 1.6 % -- while "2% 0" dropped 1.8 %. The capability
+# gate reads this value and checks netem's drop counter.
 apiVersion: chaos-mesh.org/v1alpha1
 kind: NetworkChaos
 metadata:
@@ -21,7 +25,7 @@ spec:
       app: "{{SOURCE_SERVICE}}"
   loss:
     loss: "{{LOSS_PERCENT}}"
-    correlation: "25"
+    correlation: "0"
   direction: to
   target:
     mode: one

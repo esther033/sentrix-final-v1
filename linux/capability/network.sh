@@ -7,6 +7,8 @@
 #   delay 100ms: during avg RTT >= before + 80 ms; other path < before_other + 20 ms;
 #                after RTT <= before + 10 ms; qdisc after == qdisc before
 #   loss 10%:    during loss >= 4 %; other path loss <= 1 %; after loss <= 1 %
+# Service path (judge.py service): loss 10 % with the formal template's
+# correlation; netem on probe-src must drop >= 5 % of its packets.
 # probe-network-pod.py (pod-wide) is NOT a substitute for this edge test.
 #
 # Service path (added 2026-10-20, SETUP-REVIEW 7.15): the app dials Service
@@ -102,11 +104,17 @@ probe_all() { # method phase count
   http_probe "svc-$1-$2-other_svc.txt" "$OTHER_SVC" "$3"
   http_probe "svc-$1-$2-other_pod.txt" "$OTHER_IP" "$3"
 }
-tc_both() { # tag
+tc_both() { # tag   (tc -s: netem sent/dropped counters, read by judge.py)
   for pp in "$SRC" "$DST"; do
-    echo "== $pp"; kubectl -n $NS exec "$pp" -- sh -c 'tc qdisc show; echo ---; tc filter show dev eth0 2>/dev/null; echo ---; ipset list 2>/dev/null | head -40' 2>&1 || true
+    echo "== $pp"; kubectl -n $NS exec "$pp" -- sh -c 'tc -s qdisc show; echo ---; tc filter show dev eth0 2>/dev/null; echo ---; ipset list 2>/dev/null | head -40' 2>&1 || true
   done > "$D/svc-tc-$1.txt"
 }
+# Loss spec of the formal template (correlation included): a correlated-loss
+# kernel bug only shows with the template's own values (SETUP-REVIEW 7.17).
+# LOSS_CORR=<n> overrides it (only to show the gate catching a bad value).
+LOSS_CORR="${LOSS_CORR:-$(sed -n 's/^ *correlation: *"\([0-9]*\)".*/\1/p' "$HERE/../../deploy/chaos-mesh/faults/packet-loss.yaml" | head -1)}"
+[ -n "$LOSS_CORR" ] || { log "FAIL cannot read correlation from packet-loss.yaml"; exit 1; }
+echo "loss_correlation_from_template=$LOSS_CORR" >> "$D/svc-addresses.txt"
 svc_chaos() { # name method action spec-line
   local sel=probe-src tgt=probe-dst ext=""
   case "$2" in
@@ -146,9 +154,10 @@ for m in $NET_METHODS; do
   remove_chaos "probe-svc-delay-$m"
   tc_both "$m-delay-after"
   probe_all "$m" delay-after 60
-  svc_chaos "probe-svc-loss-$m" "$m" loss 'loss: {loss: "10", correlation: "0"}' || { rc=1; continue; }
+  svc_chaos "probe-svc-loss-$m" "$m" loss "loss: {loss: \"10\", correlation: \"$LOSS_CORR\"}" || { rc=1; continue; }
   tc_both "$m-loss-during"
   probe_all "$m" loss 150
+  tc_both "$m-loss-end"
   remove_chaos "probe-svc-loss-$m"
   tc_both "$m-loss-after"
   probe_all "$m" loss-after 150

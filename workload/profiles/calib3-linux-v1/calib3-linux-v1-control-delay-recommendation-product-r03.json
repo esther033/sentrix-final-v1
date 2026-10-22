@@ -1,0 +1,36 @@
+{
+  "profile_name": "calib3-linux-v1-control-delay-recommendation-product-r03",
+  "run_role": "control",
+  "campaign_id": "calib3-linux-v1",
+  "pair_id": "calib3-linux-v1-delay-recommendation-product-r03",
+  "repetition": 3,
+  "cv_group": "repetition-3",
+  "schedule_index": 66,
+  "onset_offset_seconds": 660,
+  "pair_order": "control_then_fault",
+  "workload_seed": 558990059,
+  "calibration_status": "draft",
+  "target_rps": 2.4,
+  "time_unit": "1s",
+  "duration": "25m",
+  "warmup_seconds": 180,
+  "baseline_seconds": 480,
+  "fault_seconds": 300,
+  "recovery_seconds": 420,
+  "cooldown_seconds": 120,
+  "traffic_phase_rps": {
+    "warmup": 2.4,
+    "baseline": 2.4,
+    "fault": 2.4,
+    "recovery": 2.4,
+    "cooldown": 2.4
+  },
+  "pre_allocated_vus": 15,
+  "max_vus": 80,
+  "stage_timeout": "5s",
+  "trace_workers": 2,
+  "sham": {
+    "fault_type": "network_delay",
+    "target_id": "recommendation-product"
+  }
+}
