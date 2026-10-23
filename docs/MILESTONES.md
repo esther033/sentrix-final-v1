@@ -20,7 +20,7 @@
 | 수집 준비 | S4. 처리 용량 C 측정 | 완료 (C = 6 tx/s) | 10/16~19 |
 | 수집 준비 | **S5. 시험 pair 4개 + 2차 3개** | 완료 | 10/19~22 |
 | 수집 준비 | S6. 강도 동결·정식 스케줄 | 완료 (seed 20261023, 태그 linux-v1-frozen-20261023) | 10/23 |
-| 수집 | S7. 첫 정식 pair | 남음 | 10/21 |
+| 수집 | S7. 첫 정식 pair | 완료 (206-40: cpu-productcatalogservice-r01 valid) | 10/23 |
 | 수집 | S8. Tier 1 (cpu·delay·loss 45 pair) | 남음 | 10/21~11/2 |
 | 수집 | S9. Tier 2 (pod 15 pair) | 남음 | 11/3~11/5 |
 | 수집 | S10. Tier 3 (surge 9 pair) + 재시도 | 남음 | 11/6~11/13 |
@@ -171,7 +171,13 @@
 - 정식 seed를 정해 기록하고 69 pair 스케줄 생성. tier별로 걸렀을 때 반복 1·2·3이 시간축에 고르게 섞이는지 확인.
 - 완료 기준: 테스트 통과, `schedule.json`·profile 138개, frozen 파라미터 commit.
 
-### S7. 첫 정식 pair (10/21, 약 2시간)
+### S7. 첫 정식 pair — 완료 (10/23)
+
+- 206-40 shard(35 pair) 수집을 10/23 15:18 KST에 시작했다(밤샘, 종료 시각 제한 없음).
+- #1 linux-v1-cpu-productcatalogservice-r01: complete, 두 run assessment valid, environment_id 206-40, impacted(latency), 5,172 MiB, 16:57 KST 종료.
+- 블록 일지는 `docs/pc/206-40.md`에 있다.
+
+#### S7 계획 (10/21, 약 2시간)
 
 - `--max-pairs 1`로 Tier 1 첫 pair만 실행, 끝까지 확인. 블록 운영 절차(시작 점검, 정지, 재부팅 복구)를 실제로 한 번 수행.
 
