@@ -1,0 +1,148 @@
+incident_id: inc-linux-v1-cpu-productcatalogservice-r01
+experiment_id: exp-linux-v1-cpu-productcatalogservice-r01
+run_id: linux-v1-cpu-productcatalogservice-r01
+control_run_id: linux-v1-control-cpu-productcatalogservice-r01
+environment_id: 206-40
+baseline:
+  control_run_dir: /home/cloudman/Documents/sentrix-final-v1-main/scripts/../runs/linux-v1-control-cpu-productcatalogservice-r01
+  target_rps: 2.4
+  n_transactions: 2881
+  success_rate_pct: 100.0
+  p50_ms: 35
+  p99_ms: 132
+fault:
+  injected: true
+  type: cpu_saturation
+  cause_family: resource
+  injection_layer: Platform / compute
+  scope_kind: service_instance
+  scope_description: null
+  root_cause_service: productcatalogservice
+  target_pod_uid: 97473837-75e2-42e9-8a45-bd87f6db3d66
+  chaos_mesh_object: stresschaos/linux-v1-cpu-productcatalogservice-r01-fault
+  started_at: '2026-10-23T07:17:21.401510+00:00'
+  ended_at: '2026-10-23T07:22:19.932111+00:00'
+  removal_confidence: confirmed
+  injector_status: succeeded
+workload:
+  profile: linux-v1-cpu-productcatalogservice-r01
+  target_rps: 2.4
+  actual_rps: 2.402
+  dropped_iterations: 0
+impact:
+  confirmed: true
+  critical_failure: latency_increase
+  affected_endpoint: checkout
+  impact_started_at: '2026-10-23T07:17:21.779000+00:00'
+  evaluation_policy_version: v3
+recovery:
+  fault_removed_at: '2026-10-23T07:22:19.932111+00:00'
+  transaction_observation:
+    profile: linux-v1-cpu-productcatalogservice-r01
+    first_passing_at: '2026-10-23T07:22:20.112Z'
+    stable_at: '2026-10-23T07:22:20.112Z'
+    observation_status: pass
+  evaluation_policy_version: v3
+status: recovered
+data_views:
+  raw: runs/linux-v1-cpu-productcatalogservice-r01/raw-v2/
+  canonical: runs/linux-v1-cpu-productcatalogservice-r01/canonical-v2-014d37c2f63e/
+  re2_compatible: runs/linux-v1-cpu-productcatalogservice-r01/re2-v2-014d37c2f63e/
+data_generation: v2
+data_validation:
+  run:
+    complete: true
+    raw_export_complete: true
+    views:
+      raw: raw-v2
+      canonical: canonical-v2-014d37c2f63e
+      re2_compatible: re2-v2-014d37c2f63e
+  control:
+    complete: true
+    raw_export_complete: true
+    views:
+      raw: raw-v2
+      canonical: canonical-v2-9525c110d2b3
+      re2_compatible: re2-v2-9525c110d2b3
+validity:
+  injector_succeeded: true
+  removal_confirmed: true
+  telemetry_present_all_signals: true
+  actual_rate_meets_minimum: true
+  runtime_assessment:
+    valid: true
+    errors: []
+    actual_rps: 2.4013333333333335
+    elapsed_s: 1499.584
+    started_at: '2026-10-23T07:08:16.778Z'
+    ended_at: '2026-10-23T07:33:16.362Z'
+    fingerprint: d6bcfae3999838442c45634406595a2ad48b9f9bc74a169f77bfecacfe741dc7
+    profile:
+      profile_name: linux-v1-cpu-productcatalogservice-r01
+      run_role: fault
+      campaign_id: linux-v1
+      pair_id: linux-v1-cpu-productcatalogservice-r01
+      repetition: 1
+      cv_group: repetition-1
+      schedule_index: 1
+      onset_offset_seconds: 540
+      pair_order: control_then_fault
+      workload_seed: 1846197057
+      calibration_status: frozen
+      target_rps: 2.4
+      time_unit: 1s
+      duration: 25m
+      warmup_seconds: 180
+      baseline_seconds: 360
+      fault_seconds: 300
+      recovery_seconds: 540
+      cooldown_seconds: 120
+      traffic_phase_rps:
+        warmup: 2.4
+        baseline: 2.4
+        fault: 2.4
+        recovery: 2.4
+        cooldown: 2.4
+      pre_allocated_vus: 15
+      max_vus: 80
+      stage_timeout: 5s
+      trace_workers: 2
+      fault:
+        type: cpu_saturation
+        target_kind: service_node
+        template: deploy/chaos-mesh/faults/cpu-saturation.yaml
+        params:
+          WORKERS: 4
+          LOAD: 100
+        root_cause_service: productcatalogservice
+        scope_kind: service_instance
+    expected_transactions: 3600.0
+    phase_plan:
+    - !!python/tuple
+      - warmup
+      - 180
+      - 2.4
+    - !!python/tuple
+      - baseline
+      - 360
+      - 2.4
+    - !!python/tuple
+      - fault
+      - 300
+      - 2.4
+    - !!python/tuple
+      - recovery
+      - 540
+      - 2.4
+    - !!python/tuple
+      - cooldown
+      - 120
+      - 2.4
+  control_match:
+    valid: true
+    errors: []
+  dropped_iterations_under_threshold: true
+  raw_export_complete: true
+  data_views_complete: true
+  control_data_views_complete: true
+  is_valid_run: true

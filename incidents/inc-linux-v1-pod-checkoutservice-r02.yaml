@@ -1,0 +1,146 @@
+incident_id: inc-linux-v1-pod-checkoutservice-r02
+experiment_id: exp-linux-v1-pod-checkoutservice-r02
+run_id: linux-v1-pod-checkoutservice-r02
+control_run_id: linux-v1-control-pod-checkoutservice-r02
+environment_id: 206-40
+baseline:
+  control_run_dir: /home/cloudman/Documents/sentrix-final-v1-main/scripts/../runs/linux-v1-control-pod-checkoutservice-r02
+  target_rps: 2.4
+  n_transactions: 2882
+  success_rate_pct: 100.0
+  p50_ms: 35
+  p99_ms: 132
+fault:
+  injected: true
+  type: pod_failure
+  cause_family: availability
+  injection_layer: Kubernetes / process
+  scope_kind: service_instance
+  scope_description: null
+  root_cause_service: checkoutservice
+  target_pod_uid: e603bf7f-e2a0-4a38-8234-a71c4c2b6a62
+  chaos_mesh_object: podchaos/linux-v1-pod-checkoutservice-r02-fault
+  started_at: '2026-10-23T08:58:12.821000+00:00'
+  ended_at: '2026-10-23T09:03:13.125506+00:00'
+  removal_confidence: confirmed
+  injector_status: succeeded
+workload:
+  profile: linux-v1-pod-checkoutservice-r02
+  target_rps: 2.4
+  actual_rps: 2.403
+  dropped_iterations: 0
+impact:
+  confirmed: true
+  critical_failure: error_rate_increase
+  affected_endpoint: checkout
+  impact_started_at: '2026-10-23T08:58:12.860000+00:00'
+  evaluation_policy_version: v3
+recovery:
+  fault_removed_at: '2026-10-23T09:03:13.125506+00:00'
+  transaction_observation:
+    profile: linux-v1-pod-checkoutservice-r02
+    first_passing_at: '2026-10-23T09:03:16.193Z'
+    stable_at: '2026-10-23T09:03:16.193Z'
+    observation_status: pass
+  evaluation_policy_version: v3
+status: recovered
+data_views:
+  raw: runs/linux-v1-pod-checkoutservice-r02/raw-v2/
+  canonical: runs/linux-v1-pod-checkoutservice-r02/canonical-v2-b8e5d762a91f/
+  re2_compatible: runs/linux-v1-pod-checkoutservice-r02/re2-v2-b8e5d762a91f/
+data_generation: v2
+data_validation:
+  run:
+    complete: true
+    raw_export_complete: true
+    views:
+      raw: raw-v2
+      canonical: canonical-v2-b8e5d762a91f
+      re2_compatible: re2-v2-b8e5d762a91f
+  control:
+    complete: true
+    raw_export_complete: true
+    views:
+      raw: raw-v2
+      canonical: canonical-v2-48c1a0134608
+      re2_compatible: re2-v2-48c1a0134608
+validity:
+  injector_succeeded: true
+  removal_confirmed: true
+  telemetry_present_all_signals: true
+  actual_rate_meets_minimum: true
+  runtime_assessment:
+    valid: true
+    errors: []
+    actual_rps: 2.4026666666666667
+    elapsed_s: 1500.001
+    started_at: '2026-10-23T08:48:11.608Z'
+    ended_at: '2026-10-23T09:13:11.609Z'
+    fingerprint: d6bcfae3999838442c45634406595a2ad48b9f9bc74a169f77bfecacfe741dc7
+    profile:
+      profile_name: linux-v1-pod-checkoutservice-r02
+      run_role: fault
+      campaign_id: linux-v1
+      pair_id: linux-v1-pod-checkoutservice-r02
+      repetition: 2
+      cv_group: repetition-2
+      schedule_index: 4
+      onset_offset_seconds: 600
+      pair_order: control_then_fault
+      workload_seed: 856915564
+      calibration_status: frozen
+      target_rps: 2.4
+      time_unit: 1s
+      duration: 25m
+      warmup_seconds: 180
+      baseline_seconds: 420
+      fault_seconds: 300
+      recovery_seconds: 480
+      cooldown_seconds: 120
+      traffic_phase_rps:
+        warmup: 2.4
+        baseline: 2.4
+        fault: 2.4
+        recovery: 2.4
+        cooldown: 2.4
+      pre_allocated_vus: 15
+      max_vus: 80
+      stage_timeout: 5s
+      trace_workers: 2
+      fault:
+        type: pod_failure
+        target_kind: service_node
+        template: deploy/chaos-mesh/faults/pod-failure.yaml
+        params: {}
+        root_cause_service: checkoutservice
+        scope_kind: service_instance
+    expected_transactions: 3600.0
+    phase_plan:
+    - !!python/tuple
+      - warmup
+      - 180
+      - 2.4
+    - !!python/tuple
+      - baseline
+      - 420
+      - 2.4
+    - !!python/tuple
+      - fault
+      - 300
+      - 2.4
+    - !!python/tuple
+      - recovery
+      - 480
+      - 2.4
+    - !!python/tuple
+      - cooldown
+      - 120
+      - 2.4
+  control_match:
+    valid: true
+    errors: []
+  dropped_iterations_under_threshold: true
+  raw_export_complete: true
+  data_views_complete: true
+  control_data_views_complete: true
+  is_valid_run: true

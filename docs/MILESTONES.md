@@ -175,6 +175,8 @@
 
 - 206-40 shard(35 pair) 수집을 10/23 15:18 KST에 시작했다(밤샘, 종료 시각 제한 없음).
 - #1 linux-v1-cpu-productcatalogservice-r01: complete, 두 run assessment valid, environment_id 206-40, impacted(latency), 5,172 MiB, 16:57 KST 종료.
+- #4 linux-v1-pod-checkoutservice-r02: complete, valid, impacted, 18:33 KST 종료.
+- #6 linux-v1-delay-front-recommendation-r02(첫 network pair): complete, valid, impacted(latency·checkout). fault-record netns_evidence: netem `delay 100ms 10ms` sent 7,248 pkt(applied), ipset에 recommendation pod IP와 ClusterIP, TcpRetransSegs +4. 간선 p50 0.9 → 103.3 ms, 해제 후 0.9 ms. 20:13 KST 종료.
 - 블록 일지는 `docs/pc/206-40.md`에 있다.
 
 #### S7 계획 (10/21, 약 2시간)
