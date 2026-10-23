@@ -10,13 +10,35 @@
 #                   frozen file mid-campaign; start a new campaign ID instead.
 schema_version: 1
 campaign_id: linux-v1
-status: draft
-frozen_at: null
-calibration_evidence: []   # e.g. [calib-linux-v1-cpu-checkoutservice-001, ...]
+status: frozen
+frozen_at: "2026-10-23T00:00:00+09:00"   # approved by the researcher 2026-10-22/23 (SETUP-REVIEW 7.16-7.18)
+calibration_evidence:
+  capacity:      # C = 6 tx/s: rate 4 p50/p99 35/129 ms, 6 133/326, 8 FAIL 545 (SETUP-REVIEW 7.13)
+    result: runs/_calibration/capacity-merged-20261019/capacity-merged.json
+    curve: linux/out/capacity-curve-20261019.csv
+  capability:    # 206-40 gates (7.11, 7.15, 7.17, 7.18)
+    - linux/out/capability-20261022T071229Z
+    - linux/out/capability-network-20261023T053747Z
+  cpu_saturation:    # worker 1 no impact (7.14); worker 4 / load 100 impacted (7.16)
+    - calib-linux-v1-cpu-checkoutservice-r01
+    - calib2-linux-v1-cpu-checkoutservice-r02
+    - calib2-linux-v1-control-cpu-checkoutservice-r02
+  pod_failure:       # impacted (7.14)
+    - calib-linux-v1-pod-checkoutservice-r01
+    - calib-linux-v1-control-pod-checkoutservice-r01
+  network_delay:     # method A, +100 ms per call, impacted (7.16)
+    - calib2-linux-v1-delay-front-product-r02
+    - calib2-linux-v1-control-delay-front-product-r02
+  packet_loss:       # correlation 25 dropped nothing (7.16, 7.17); correlation 0 drop 2.04 %, impacted (7.17)
+    - calib2-linux-v1-loss-front-product-r02
+    - calib3-linux-v1-loss-front-product-r02
+    - calib3-linux-v1-control-loss-front-product-r02
+  traffic_surge:     # levels from the capacity curve (7.15)
+    - runs/_calibration/capacity-merged-20261019/capacity-merged.json
 
 # Sustainable capacity C in user transactions/s (not HTTP RPS, not gRPC calls).
 # Measured by linux/calibration/capacity-sweep.sh. null until measured.
-capacity_tps: null
+capacity_tps: 6     # baseline 0.4C = 2.4 tx/s
 load_fractions:
   baseline: 0.4
   # 2026-10-20 (SETUP-REVIEW 7.15): was 0.6 / 0.8 / 1.0. At C = 6 the capacity
@@ -42,10 +64,14 @@ faults:
     params:
       LATENCY: 100ms
       JITTER: 10ms
+    template_fixed:     # in the template, not a parameter; tests check it (7.18)
+      correlation: "0"
   packet_loss:
     template: deploy/chaos-mesh/faults/packet-loss.yaml
     params:
       LOSS_PERCENT: "2"
+    template_fixed:     # kernel 7.0 netem drops ~nothing with correlation 25 (7.17)
+      correlation: "0"
   traffic_surge:
     template: null
     params: {}

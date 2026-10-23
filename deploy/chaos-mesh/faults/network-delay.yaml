@@ -7,6 +7,9 @@
 # so the pod-IP target alone never matches app traffic. externalTargets adds
 # the destination ClusterIP (looked up by run-attended.py at injection time);
 # the pod-IP target stays for direct pod-IP traffic.
+# correlation "0" (SETUP-REVIEW 7.18): kernel 7.0 netem misbehaves with
+# correlated loss (7.17), so delay jitter is uncorrelated too. The capability
+# gate reads this value and checks the delay and its spread.
 apiVersion: chaos-mesh.org/v1alpha1
 kind: NetworkChaos
 metadata:
@@ -23,7 +26,7 @@ spec:
   delay:
     latency: "{{LATENCY}}"
     jitter: "{{JITTER}}"
-    correlation: "25"
+    correlation: "0"
   direction: to
   target:
     mode: one

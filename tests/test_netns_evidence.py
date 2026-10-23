@@ -114,6 +114,33 @@ class CapabilityNetemCheckTests(unittest.TestCase):
             self.assertEqual(judge.netem_drop_pct(p), 1.59)   # below the 5 % floor -> svc_loss_netem_drops FAIL
             self.assertIsNone(judge.netem_drop_pct(Path(tmp, "missing.txt")))
 
+    def test_judge_delay_latency_and_jitter(self):
+        import random
+        rnd = random.Random(1)
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / "svc-addresses.txt").write_text("dst_pod=x\ndelay_from_template=100ms/10ms/0\n")
+            self.assertEqual(judge.delay_spec(d), (100.0, 10.0))
+            before = [0.0004 + rnd.random() * 1e-4 for _ in range(60)]
+            line = lambda c: f"{c:.6f} {c + 0.1:.6f} 200"
+            def shape(during):
+                return judge.delay_shape(before, [x * 1000 for x in during])
+            normal = [0.0004 + 0.1 + rnd.gauss(0, 0.010) for _ in range(60)]   # tc default: normal table
+            flat = [0.1004 + rnd.random() * 1e-5 for _ in range(60)]           # jitter lost
+            wide = [0.0004 + 0.1 + rnd.gauss(0, 0.040) for _ in range(60)]     # jitter blown up
+            sn, sf, sw = shape(normal), shape(flat), shape(wide)
+            self.assertLess(abs(sn["median_ms"] - 100), 15)
+            self.assertTrue(2.5 <= sn["stdev_ms"] <= 15)
+            self.assertLess(sf["stdev_ms"], 2.5)
+            self.assertGreater(sw["stdev_ms"], 15)
+            (d / "svc-a-before-dst_svc.txt").write_text("\n".join(map(line, before)) + "\n")
+            (d / "svc-a-delay-dst_svc.txt").write_text("\n".join(map(line, normal)) + "\n")
+            self.assertEqual(len(judge.connect_ms(d / "svc-a-delay-dst_svc.txt")), 60)
+            checks = judge.service(d, "a", "a")["checks"]
+            self.assertTrue(checks["svc_delay_latency_matches"] and checks["svc_delay_jitter_matches"])
+            (d / "svc-a-delay-dst_svc.txt").write_text("\n".join(map(line, flat)) + "\n")
+            self.assertFalse(judge.service(d, "a", "a")["checks"]["svc_delay_jitter_matches"])
+
 
 if __name__ == "__main__":
     unittest.main()

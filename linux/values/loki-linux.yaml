@@ -26,3 +26,14 @@ resultsCache:
 sidecar:
   rules:
     enabled: false
+# Mutable tag pinned (frozen 2026-10-23, SETUP-REVIEW 7.18): the chart's
+# 1.29-alpine moves with nginx patch releases; this is the digest 206-40 ran
+# during calibration (loki-gateway pod imageID).
+gateway:
+  # Recreate, not RollingUpdate: the chart's required pod anti-affinity keeps a
+  # second gateway pod Pending on a single node, so a rolling update never ends
+  # (helm --wait timed out on 2026-10-23, SETUP-REVIEW 7.18).
+  deploymentStrategy:
+    type: Recreate
+  image:
+    digest: sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6

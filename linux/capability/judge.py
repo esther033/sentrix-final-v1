@@ -48,6 +48,36 @@ def http_stats(path):
             "affected_pct": round(100 * affected / len(rows), 1) if rows else None}
 
 
+def connect_ms(path):
+    """time_connect (ms) of the successful curl lines: SYN out, SYN-ACK back, so
+    the delayed hop is crossed exactly once (one latency + jitter sample)."""
+    out = []
+    for line in path.read_text().splitlines() if path.exists() else []:
+        parts = line.split()
+        if len(parts) == 3 and parts[2] == "200":
+            out.append(float(parts[0]) * 1000)
+    return out
+
+
+def delay_spec(d):
+    """(latency_ms, jitter_ms) from the delay_from_template line of svc-addresses.txt."""
+    m = re.search(r"delay_from_template=(\d+)ms/(\d+)ms/", (d / "svc-addresses.txt").read_text()) \
+        if (d / "svc-addresses.txt").exists() else None
+    return (float(m.group(1)), float(m.group(2))) if m else (100.0, 0.0)
+
+
+def delay_shape(before, during):
+    """Added connect delay: median, sample stdev and p5..p95 of during - median(before)."""
+    if len(before) < 5 or len(during) < 5:
+        return None
+    base = sorted(before)[len(before) // 2]
+    xs = sorted(x - base for x in during)
+    mean = sum(xs) / len(xs)
+    q = lambda f: xs[min(len(xs) - 1, int(len(xs) * f))]
+    return {"n": len(xs), "median_ms": round(q(.5), 2), "stdev_ms": round((sum((x - mean) ** 2 for x in xs) / (len(xs) - 1)) ** .5, 2),
+            "p05_ms": round(q(.05), 2), "p95_ms": round(q(.95), 2)}
+
+
 def netem_drop_pct(path, pod_prefix="probe-src"):
     """netem drop % on one probe pod from a `tc -s qdisc` dump (svc-tc-*.txt)."""
     if not path.exists():
@@ -75,11 +105,19 @@ def service(d, gate_method, *methods):
         ge = lambda a, b: a is not None and b is not None and a >= b
         le = lambda a, b: a is not None and b is not None and a <= b
         b_svc, b_osvc = med("before", "dst_svc"), med("before", "other_svc")
+        lat, jit = delay_spec(d)
+        shape = delay_shape(connect_ms(d / f"svc-{m}-before-dst_svc.txt"), connect_ms(d / f"svc-{m}-delay-dst_svc.txt"))
         checks = {
             # fresh connection: handshake + request both cross the delayed hop -> >= +80 ms is loose
             "svc_delay_applied": ge(med("delay", "dst_svc"), (b_svc or 0) + 80),
             "svc_delay_scoped": le(med("delay", "other_svc"), (b_osvc or 0) + 20),
             "svc_delay_removed": le(med("delay-after", "dst_svc"), (b_svc or 0) + 10),
+            # one crossing of the delayed hop: latency within 15 ms, and a spread that
+            # matches the jitter (netem's jitter: stdev ~0.58 x jitter uniform,
+            # ~1 x jitter normal table). Catches a jitter that is lost or blown up (7.18).
+            "svc_delay_latency_matches": shape is not None and abs(shape["median_ms"] - lat) <= 15,
+            "svc_delay_jitter_matches": shape is not None and (
+                0.25 * jit <= shape["stdev_ms"] <= 1.5 * jit if jit else shape["stdev_ms"] <= 3),
             "svc_loss_applied": ge(aff("loss", "dst_svc"), 10),
             "svc_loss_scoped": le(aff("loss", "other_svc"), 2),
             "svc_loss_removed": le(aff("loss-after", "dst_svc"), 2),
@@ -90,6 +128,7 @@ def service(d, gate_method, *methods):
         pod_path = {"pod_delay_applied": ge(med("delay", "dst_pod"), (med("before", "dst_pod") or 0) + 80),
                     "pod_loss_applied": ge(aff("loss", "dst_pod"), 10)}
         r["methods"][m] = {"stats": st, "checks": checks, "pod_path_info": pod_path,
+                           "delay_spec_ms": {"latency": lat, "jitter": jit}, "delay_connect_added": shape,
                            "netem_drop_pct_src": netem_drop_pct(d / f"svc-tc-{m}-loss-end.txt"),
                            "service_path_pass": all(checks.values())}
     r["checks"] = r["methods"].get(gate_method, {}).get("checks") or {"gate_method_measured": False}

@@ -8,7 +8,9 @@
 #                after RTT <= before + 10 ms; qdisc after == qdisc before
 #   loss 10%:    during loss >= 4 %; other path loss <= 1 %; after loss <= 1 %
 # Service path (judge.py service): loss 10 % with the formal template's
-# correlation; netem on probe-src must drop >= 5 % of its packets.
+# correlation; netem on probe-src must drop >= 5 % of its packets. Delay
+# 100 ms / jitter 10 ms with the template's correlation; added connect time
+# median within 100 +- 15 ms and its spread consistent with the jitter.
 # probe-network-pod.py (pod-wide) is NOT a substitute for this edge test.
 #
 # Service path (added 2026-10-20, SETUP-REVIEW 7.15): the app dials Service
@@ -115,6 +117,13 @@ tc_both() { # tag   (tc -s: netem sent/dropped counters, read by judge.py)
 LOSS_CORR="${LOSS_CORR:-$(sed -n 's/^ *correlation: *"\([0-9]*\)".*/\1/p' "$HERE/../../deploy/chaos-mesh/faults/packet-loss.yaml" | head -1)}"
 [ -n "$LOSS_CORR" ] || { log "FAIL cannot read correlation from packet-loss.yaml"; exit 1; }
 echo "loss_correlation_from_template=$LOSS_CORR" >> "$D/svc-addresses.txt"
+# Delay spec of the formal template: campaign latency/jitter (fault-params) and
+# the template's correlation. judge.py checks the added connect time (one SYN
+# crossing the delayed hop) against latency and jitter (SETUP-REVIEW 7.18).
+DELAY_LATENCY="${DELAY_LATENCY:-100ms}"; DELAY_JITTER="${DELAY_JITTER:-10ms}"
+DELAY_CORR="${DELAY_CORR:-$(sed -n 's/^ *correlation: *"\([0-9]*\)".*/\1/p' "$HERE/../../deploy/chaos-mesh/faults/network-delay.yaml" | head -1)}"
+[ -n "$DELAY_CORR" ] || { log "FAIL cannot read correlation from network-delay.yaml"; exit 1; }
+echo "delay_from_template=$DELAY_LATENCY/$DELAY_JITTER/$DELAY_CORR" >> "$D/svc-addresses.txt"
 svc_chaos() { # name method action spec-line
   local sel=probe-src tgt=probe-dst ext=""
   case "$2" in
@@ -148,7 +157,7 @@ for m in $NET_METHODS; do
   log "service path method=$m"
   tc_both "$m-before"
   probe_all "$m" before 60
-  svc_chaos "probe-svc-delay-$m" "$m" delay 'delay: {latency: "100ms", jitter: "0ms", correlation: "0"}' || { rc=1; continue; }
+  svc_chaos "probe-svc-delay-$m" "$m" delay "delay: {latency: \"$DELAY_LATENCY\", jitter: \"$DELAY_JITTER\", correlation: \"$DELAY_CORR\"}" || { rc=1; continue; }
   tc_both "$m-delay-during"
   probe_all "$m" delay 60
   remove_chaos "probe-svc-delay-$m"

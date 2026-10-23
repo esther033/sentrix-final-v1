@@ -118,10 +118,69 @@ class ScheduleTests(unittest.TestCase):
         self.assertNotEqual(json.loads(other[1])['pairs'], self.doc['pairs'])
 
     def test_draft_and_missing_capacity(self):
+        # a --capacity-tps override always makes a draft, even from frozen params
         self.assertTrue(self.doc['draft'])
         self.assertTrue(all(p['calibration_status'] == 'draft' for p in self.profiles.values()))
+        import yaml
+        params = {**yaml.safe_load(PARAMS.read_text()), 'status': 'draft', 'capacity_tps': None}
         with self.assertRaises(ValueError):
-            gen.render(PLAN, PARAMS, 1, 'workload/profiles/linux-v1')
+            gen.build(yaml.safe_load(PLAN.read_text()), params, 1, None)
+
+
+class FrozenParamsTests(unittest.TestCase):
+    """campaigns/linux-v1/fault-params.yaml as approved 2026-10-22/23 (SETUP-REVIEW 7.18)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import yaml
+        cls.params = yaml.safe_load(PARAMS.read_text())
+
+    def test_frozen_values(self):
+        p = self.params
+        self.assertEqual((p['status'], p['capacity_tps'], p['load_fractions']['baseline']), ('frozen', 6, 0.4))
+        self.assertTrue(p['frozen_at'])
+        self.assertEqual(p['load_fractions']['surge_levels'], {'l1': 0.8, 'l2': 1.0, 'l3': 1.3333})
+        f = p['faults']
+        self.assertEqual(f['cpu_saturation']['params'], {'WORKERS': 4, 'LOAD': 100})
+        self.assertEqual(f['network_delay']['params'], {'LATENCY': '100ms', 'JITTER': '10ms'})
+        self.assertEqual(f['packet_loss']['params'], {'LOSS_PERCENT': '2'})
+        self.assertEqual(f['pod_failure']['params'], {})
+
+    def test_template_fixed_values_match_templates(self):
+        import yaml
+        for ft in ('network_delay', 'packet_loss'):
+            fp = self.params['faults'][ft]
+            spec = yaml.safe_load((ROOT / fp['template']).read_text())['spec']
+            block = spec['delay' if ft == 'network_delay' else 'loss']
+            self.assertEqual(block['correlation'], fp['template_fixed']['correlation'], ft)
+            self.assertEqual(block['correlation'], '0', ft)
+
+    def test_evidence_runs_and_files_exist_locally(self):
+        ev = self.params['calibration_evidence']
+        self.assertEqual(set(ev), {'capacity', 'capability', 'cpu_saturation', 'pod_failure', 'network_delay',
+                                   'packet_loss', 'traffic_surge'})
+        self.assertIn('calib3-linux-v1-loss-front-product-r02', ev['packet_loss'])
+        if (ROOT / 'runs' / 'calib3-linux-v1-loss-front-product-r02').exists():   # only on 206-40
+            for key, items in ev.items():
+                for item in (items.values() if isinstance(items, dict) else items):
+                    path = ROOT / item if '/' in item else ROOT / 'runs' / item
+                    self.assertTrue(path.exists(), item)
+
+    def test_frozen_render_is_not_draft(self):
+        import yaml
+        profiles, _, meta = gen.build(yaml.safe_load(PLAN.read_text()), self.params, 1, None)
+        self.assertFalse(meta['draft'])
+        self.assertEqual(meta['baseline_tps'], 2.4)
+        self.assertTrue(all(p['calibration_status'] == 'frozen' for p in profiles.values()))
+
+
+class PinnedImageTests(unittest.TestCase):
+    def test_mutable_tags_pinned_to_digests(self):
+        k = (ROOT / 'deploy/linux/online-boutique/kustomization.yaml').read_text()
+        self.assertIn('newTag: alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0', k)
+        import yaml
+        loki = yaml.safe_load((ROOT / 'linux/values/loki-linux.yaml').read_text())
+        self.assertRegex(loki['gateway']['image']['digest'], r'^sha256:[0-9a-f]{64}$')
 
 
 class SurgeLevelTests(unittest.TestCase):

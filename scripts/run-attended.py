@@ -105,6 +105,7 @@ def run(args):
     # NTP steps it, which would corrupt every label timestamp of the run.
     host_start = host_clock()
     require_ntp(host_start)
+    env_id = environment_id()   # refuses an invalid ID before the run directory exists
     no_active_chaos()
     before = snapshot()
     if not before["healthy"]: raise ValueError("Pods not healthy")
@@ -125,7 +126,7 @@ def run(args):
              "control_match":"deferred" if args.defer_control_match else ("checked_before_run" if fault else None),
              "planned_onset_offset_seconds":profile["warmup_seconds"]+profile["baseline_seconds"],
              "onset_offset_seconds":profile.get("onset_offset_seconds"),
-             "host_at_start":host_start,"environment_id":environment_id()}
+             "host_at_start":host_start,"environment_id":env_id}
     if profile.get("onset_offset_seconds") is not None and profile["onset_offset_seconds"]!=state["planned_onset_offset_seconds"]:
         raise ValueError("onset_offset_seconds != warmup_seconds + baseline_seconds")
     fault_record = None

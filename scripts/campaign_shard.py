@@ -6,11 +6,13 @@ PC runs pairs generated from the same seed and parameters.
 
 * A pair (its fault and control run) belongs to exactly one shard.
 * Assignment walks the schedule in order and deals pairs round-robin across
-  the PCs, balancing cell (fault type, target), fault type, total and
-  repetition (assign()). With 3 PCs and 3 repetitions every PC gets one
+  the PCs, balancing cell (fault type, target), fault type, pair order, total
+  and repetition (assign()). With 3 PCs and 3 repetitions every PC gets one
   repetition of every cell (23 pairs), with repetitions mixed.
-* The shard name is the PC's hostname (the run records' environment_id);
-  run-campaign.py --shard refuses a shard written for another host.
+* The shard name is the PC's environment ID (host_state.environment_id():
+  SENTRIX_ENVIRONMENT_ID, linux/config/local.env, else the hostname; also the
+  run records' environment_id); run-campaign.py --shard refuses a shard
+  written for another PC.
 
 Output: <schedule dir>/shards/<name>.json (refuses to overwrite a differing file).
 CLI: scripts/shard-campaign.py; run-campaign.py uses load_shard().
@@ -21,10 +23,12 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_VERSION = 1
-NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from host_state import ENV_ID as NAME  # noqa: E402  same rule as the environment ID
 
 
 def assign(pairs, names):
@@ -32,9 +36,11 @@ def assign(pairs, names):
 
     Walks the schedule and deals pairs round-robin: from the PC after the last
     one used, take the first PC that (in this priority) has fewest pairs of the
-    same cell (fault type, target), of the same fault type, in total, and of the
-    same repetition. So a cell's repetitions land on different PCs while there
-    are enough PCs, and PC never coincides with a cell or a repetition fold."""
+    same cell (fault type, target), of the same fault type, of the same pair
+    order, in total, and of the same repetition. So a cell's repetitions land on
+    different PCs while there are enough PCs, and PC never coincides with a
+    cell, a pair order or a repetition fold (with 2 PCs, without the pair-order
+    key one PC got 23 of its 35 pairs fault-first; SETUP-REVIEW 7.18)."""
     if len(names) != len(set(names)) or not names:
         raise ValueError("shard names must be non-empty and distinct")
     for n in names:
@@ -44,10 +50,12 @@ def assign(pairs, names):
     count = Counter()
     turn = 0
     for p in sorted(pairs, key=lambda p: p["schedule_index"]):
-        keys = (("cell", p["fault_type"], p["target_id"]), ("type", p["fault_type"]), ("rep", p["repetition"]))
+        keys = (("cell", p["fault_type"], p["target_id"]), ("type", p["fault_type"]), ("rep", p["repetition"]),
+                ("order", p["pair_order"]))
         order = [names[(turn + i) % len(names)] for i in range(len(names))]
         i = min(range(len(order)), key=lambda i: (count[order[i], keys[0]], count[order[i], keys[1]],
-                                                   len(out[order[i]]), count[order[i], keys[2]], i))
+                                                   count[order[i], keys[3]], len(out[order[i]]),
+                                                   count[order[i], keys[2]], i))
         name = order[i]
         out[name].append(p)
         for k in keys:
@@ -60,7 +68,7 @@ def shard_doc(schedule, schedule_rel, schedule_sha, names, name, pairs):
     return {"schema_version": SCHEMA_VERSION, "campaign_id": schedule["campaign_id"], "seed": schedule["seed"],
             "draft": schedule.get("draft"), "schedule": schedule_rel, "schedule_sha256": schedule_sha,
             "shard": name, "shards": list(names),
-            "method": "round-robin in schedule order, balancing cell, fault type, total, repetition",
+            "method": "round-robin in schedule order, balancing cell, fault type, pair order, total, repetition",
             "summary": {"pairs": len(pairs),
                         "fault_type": dict(sorted(Counter(p["fault_type"] for p in pairs).items())),
                         "repetition": {str(k): v for k, v in sorted(Counter(p["repetition"] for p in pairs).items())},
@@ -105,7 +113,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--schedule", default=str(ROOT / "campaigns/linux-v1/schedule.json"))
     ap.add_argument("--pc", action="append", dest="names", required=True,
-                    help="PC hostname, repeatable, in a fixed order (e.g. --pc 206-40 --pc 206-41 --pc 206-42)")
+                    help="PC environment ID (SENTRIX_ENVIRONMENT_ID), repeatable, in a fixed order (e.g. --pc 206-40 --pc 206-41 --pc 206-42)")
     ap.add_argument("--dry-run", action="store_true", help="print the per-PC summary; write nothing")
     args = ap.parse_args(argv)
     files = render(args.schedule, args.names)

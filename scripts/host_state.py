@@ -7,12 +7,17 @@ which boot it ran in and whether NTP was synchronized, and refuses to start
 while it is not.
 """
 from datetime import datetime, timezone
+import os
 from pathlib import Path
+import re
 import socket
 import subprocess
+import sys
 
 BOOT_ID_PATH = Path("/proc/sys/kernel/random/boot_id")
 STAT_PATH = Path("/proc/stat")
+LOCAL_ENV_PATH = Path(__file__).resolve().parents[1] / "linux" / "config" / "local.env"
+ENV_ID = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
 def ntp_synchronized(runner=subprocess.run):
@@ -26,9 +31,38 @@ def ntp_synchronized(runner=subprocess.run):
     return value if p.returncode == 0 and value in ("yes", "no") else "unknown"
 
 
-def environment_id():
-    """Collection PC identity for parallel collection (= shard name): the hostname."""
-    return socket.gethostname()
+def local_env(path=LOCAL_ENV_PATH):
+    """KEY=VALUE pairs of linux/config/local.env (machine-local, not in Git)."""
+    out = {}
+    try:
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, _, v = line.partition("=")
+            out[k.strip().removeprefix("export ").strip()] = v.strip().strip("'\"")
+    return out
+
+
+def environment_id(environ=None, local_env_path=LOCAL_ENV_PATH, hostname=socket.gethostname):
+    """Collection PC identity for parallel collection (= shard name, k3s node name,
+    run records' environment_id). SENTRIX_ENVIRONMENT_ID in the environment, else
+    in linux/config/local.env, else the hostname. Lowercase letters, digits and
+    single hyphens only; anything else (e.g. hostname "D" on 206-39) is refused so
+    the PC must set an ID instead of collecting under a wrong one."""
+    environ = os.environ if environ is None else environ
+    for source, value in (("SENTRIX_ENVIRONMENT_ID", environ.get("SENTRIX_ENVIRONMENT_ID")),
+                          (str(local_env_path), local_env(local_env_path).get("SENTRIX_ENVIRONMENT_ID")),
+                          ("hostname", hostname())):
+        if value:
+            if not ENV_ID.fullmatch(value):
+                raise ValueError(f"environment id {value!r} from {source} is not lowercase letters, digits and "
+                                 "hyphens; set SENTRIX_ENVIRONMENT_ID in linux/config/local.env "
+                                 "(see linux/config/local.env.example)")
+            return value
+    raise ValueError("no environment id: set SENTRIX_ENVIRONMENT_ID in linux/config/local.env")
 
 
 def host_clock(boot_id_path=BOOT_ID_PATH, stat_path=STAT_PATH, runner=subprocess.run):
@@ -63,3 +97,10 @@ def reboot_errors(start, end):
         return ["host rebooted during run (boot_id %s -> %s, booted_at %s)"
                 % (start["boot_id"], end["boot_id"], end.get("booted_at"))]
     return []
+
+
+if __name__ == "__main__":   # shell scripts: ID=$(python3 scripts/host_state.py)
+    try:
+        print(environment_id())
+    except ValueError as e:
+        sys.exit(f"ERROR: {e}")

@@ -9,7 +9,7 @@
 04 스택 배포  →  05 엔드포인트·series·digest 확인
 capability (CPU / pod / network edge)  →  capacity C 측정
 fault-params 동결  →  schedule 생성  →  시험 pair 2개  →  (승인 후) 전체 캠페인
-(PC 3대 병렬 수집: 8절, 새 PC 세팅: NEW-PC.md)
+(PC 2대 병렬 수집: 8절, 새 PC 세팅: NEW-PC.md)
 ```
 
 ## 0. 압축 해제 위치
@@ -121,7 +121,7 @@ tmux attach -t sentrix-campaign
 ### 7.3 블록 시작 전 점검 (매일)
 
 ```bash
-cd ~/Documents/sentrix-final-v1-main     # 206-40의 경로. 새 PC는 ~/Documents/sentrix-final-v1
+cd ~/Documents/sentrix-final-v1-main     # 206-40의 경로. 새 PC는 ~/Documents/sentrix-collection
 # 1) 부팅 직후면 NTP 동기화를 기다린다 (Windows 사용 후 시계가 +9h 틀어져 있을 수 있음)
 timedatectl show -p NTPSynchronized --value      # yes 가 나올 때까지 대기
 timedatectl                                      # Local time 이 실제 시각과 맞는지 눈으로 확인
@@ -183,9 +183,9 @@ set -a; . linux/config/endpoints.env; set +a
 - pair 사이마다 NTP 동기화 + Chaos 잔류 없음 + 모든 Pod Ready 확인 → 5분 정상 관찰 → 다시 확인.
 - 전원 차단 등으로 fault가 남았으면: `bash linux/campaign/emergency-cleanup.sh`
 
-## 8. 병렬 수집 (PC 3대: 206-40 + 2대)
+## 8. 병렬 수집 (PC 2대: 206-40 + 206-39)
 
-교수님 지시로 정식 69 pair를 PC 3대에 나눠 돌린다. **스케줄은 하나(seed 하나)**다. 각 pair(fault run + control run)는 PC 한 대에서만 돈다. 새 PC 세팅 순서는 [`NEW-PC.md`](NEW-PC.md)를 따른다.
+교수님 지시로 정식 69 pair를 PC 2대(206-40, 206-39)에 나눠 돌린다(35/34 pair). **스케줄은 하나(seed 하나)**다. 각 pair(fault run + control run)는 PC 한 대에서만 돈다. 새 PC 세팅 순서는 [`NEW-PC.md`](NEW-PC.md)를 따른다.
 
 ### 8.1 브랜치와 코드 버전
 
@@ -194,9 +194,12 @@ set -a; . linux/config/endpoints.env; set +a
 | 206-40 | `school-pc` | 코드 수정은 **206-40에서만** 한다(테스트 통과 후 commit). |
 | 다른 PC | `collect-<pc이름>` | 206-40이 만든 **태그 버전**에서 브랜치를 만든다. 코드는 고치지 않는다. 이 브랜치에는 `docs/pc/<pc이름>.md`와 `incidents/`만 commit한다. |
 
-- `<pc이름>`은 그 PC의 `hostname`이다. 이 값이 shard 파일 이름이자 run 기록의 `environment_id`다.
+- `<pc이름>`은 그 PC의 **수집 ID**(environment ID)다. 이 값이 shard 파일 이름, k3s 노드 이름, run 기록의 `environment_id`다.
+  - 정하는 순서: 환경변수 `SENTRIX_ENVIRONMENT_ID` > `linux/config/local.env`의 `SENTRIX_ENVIRONMENT_ID` > `hostname`. 소문자·숫자·하이픈만 허용하고, 아니면 run이 시작되지 않는다.
+  - `linux/config/local.env`는 git에 올리지 않는다(`.gitignore`). 예시는 `linux/config/local.env.example`이다. 모든 PC가 local.env를 만든다(206-40: `206-40`, 206-39: `206-39`. 206-39의 hostname은 `D`라 hostname으로는 거부된다).
+  - 확인: `python3 scripts/host_state.py`가 그 PC의 ID를 출력한다.
   - 기록 위치: `runtime.json`, `run-manifest.yaml`(top-level과 `host`), `incidents/*.yaml`.
-  - 3대의 hostname이 서로 달라야 한다.
+  - 2대의 ID가 서로 달라야 한다.
 - 태그는 강도 동결, 정식 스케줄 생성, shard 생성까지 끝난 school-pc commit에 붙인다(사람이 승인한 뒤 따로 지시한다). 모든 PC가 같은 태그로 돌아야 profile, template, values overlay가 같다.
 - 수집 중 코드 수정이 꼭 필요하면 206-40에서 고치고 테스트한 뒤 새 태그를 만든다. 다른 PC는 블록 사이에만 새 태그로 옮기고, 그 사실을 `docs/pc/<pc이름>.md`에 적는다.
 
@@ -211,11 +214,11 @@ set -a; . linux/config/endpoints.env; set +a
 
 ```bash
 set -a; . linux/config/endpoints.env; set +a
-.venv/bin/python -B scripts/capacity-sweep.py --rates 4,6,8 --minutes 5 --max-p99-ms 500 --campaign linux-v1-$(hostname)
+.venv/bin/python -B scripts/capacity-sweep.py --rates 4,6,8 --minutes 5 --max-p99-ms 500 --campaign linux-v1-$(python3 scripts/host_state.py)
 ```
 
 - 각 rate 5분이다(warmup 120 s 뒤 steady 180 s). p99 기준은 **500 ms 고정**이다. 첫 FAIL에서 멈춘다.
-- run ID에 hostname이 들어가므로 나중에 데이터를 합쳐도 겹치지 않는다.
+- run ID에 수집 ID가 들어가므로 나중에 데이터를 합쳐도 겹치지 않는다.
 - 206-40 기준값(10분, `runs/_calibration/capacity-merged-20261019/`):
 
 | rate | 206-40 p50 / p99 (ms) | 판정 |
@@ -233,23 +236,23 @@ set -a; . linux/config/endpoints.env; set +a
 ### 8.4 shard 생성 (206-40에서, 정식 스케줄 생성 직후)
 
 ```bash
-.venv/bin/python -B scripts/shard-campaign.py --pc 206-40 --pc <pc2> --pc <pc3> --dry-run   # 분포 확인
-.venv/bin/python -B scripts/shard-campaign.py --pc 206-40 --pc <pc2> --pc <pc3>
+.venv/bin/python -B scripts/shard-campaign.py --pc 206-40 --pc 206-39 --dry-run   # 분포 확인
+.venv/bin/python -B scripts/shard-campaign.py --pc 206-40 --pc 206-39
 # -> campaigns/linux-v1/shards/<pc이름>.json, commit 후 태그
 ```
 
-- 스케줄 순서대로 돌아가며 배정한다. 같은 셀(fault 종류 × 대상)의 반복 3개는 서로 다른 PC로 간다. 그래서 PC 3대면 각 PC가 23개 셀을 하나씩 받는다(23 pair, fault 종류 5/5/5/5/3, 반복 1/2/3이 섞임).
+- 스케줄 순서대로 돌아가며 배정한다. 같은 셀(fault 종류 × 대상)의 반복 3개는 두 PC에 2/1로 갈라진다. 두 PC 모두 모든 fault 종류를 받는다(35/34 pair). 실제 분포는 `docs/SETUP-REVIEW-20261016.md` 7.18에 있다.
 - shard는 `schedule.json`의 SHA-256을 고정한다. 스케줄이 바뀌면 shard도 다시 만든다.
 
 ### 8.5 PC별 실행
 
 ```bash
-linux/campaign/start.sh --shard campaigns/linux-v1/shards/$(hostname).json \
-  --fault-type cpu_saturation --fault-type network_delay --fault-type packet_loss --stop-before HH:MM
+linux/campaign/start.sh --shard campaigns/linux-v1/shards/$(python3 scripts/host_state.py).json   # 밤샘 운영(종료 시각 제한 없음)
+# 하루 블록 운영이면 --stop-before HH:MM, tier 순서를 지키려면 --fault-type 을 덧붙인다
 ```
 
 - 블록 운영(7.2~7.5)은 같다. tier 순서도 PC마다 같다.
-- `--shard`는 다른 host용 shard나 다른 schedule에서 만든 shard를 거부한다.
+- start.sh가 수집 ID를 정해 tmux 세션에 넘긴다. `--shard`는 다른 수집 ID용 shard나 다른 schedule에서 만든 shard를 거부한다.
 - 한 pair의 두 run은 같은 PC에서 돈다. control 매칭은 namespace·node UID가 포함된 환경 fingerprint를 비교하므로 다른 PC의 run과는 짝지어지지 않는다.
 - 실패 pair의 재시도 ID, `decisions.yaml`의 제외 결정은 그 PC에서 내리고 `docs/pc/<pc이름>.md`에도 적는다.
 
@@ -259,8 +262,8 @@ linux/campaign/start.sh --shard campaigns/linux-v1/shards/$(hostname).json \
 
 ```bash
 # 보내는 PC (예: tier 1 끝난 뒤)
-cd ~/Documents/sentrix-final-v1
-H=$(hostname); OUT=transfer-$H-$(date -u +%Y%m%dT%H%MZ); mkdir -p "$OUT"
+cd ~/Documents/sentrix-collection
+H=$(python3 scripts/host_state.py); OUT=transfer-$H-$(date -u +%Y%m%dT%H%MZ); mkdir -p "$OUT"
 ls -d runs/linux-v1-* runs/calib-linux-v1-$H-* runs/_calibration > "$OUT/paths.txt"   # 이 PC의 run과 용량 확인 기록
 find $(cat "$OUT/paths.txt") runs/_campaign/linux-v1 audits -type f -print0 | sort -z | xargs -0 sha256sum > "$OUT/SHA256SUMS"
 rsync -a --info=progress2 $(cat "$OUT/paths.txt") /media/<외장>/sentrix-$H/runs/
@@ -273,7 +276,7 @@ cd /media/<외장>/sentrix-$H && sha256sum -c --quiet SHA256SUMS && echo ALL OK
 
 - 206-40으로 합칠 때 run 폴더(`runs/<run_id>`)는 ID가 PC마다 다르므로 그대로 `runs/` 아래에 둔다. 이미 같은 이름이 있으면 덮어쓰지 말고 멈춘다(`rsync --ignore-existing`을 쓰고 건너뛴 파일이 없는지 확인).
 - PC마다 같은 이름인 `runs/_campaign/linux-v1/`(queue.log 등)과 `audits/`는 `runs/_campaign/linux-v1/hosts/<pc이름>/` 아래에 따로 둔다. 206-40 자신의 파일은 덮어쓰지 않는다.
-- 복사 후 `sha256sum -c`가 모두 OK인지, run 수(PC당 46 run = 23 pair × 2)가 맞는지 확인한다. 그 뒤에야 원본 PC의 데이터를 지울지 정한다(지우는 것은 사람이 결정한다).
+- 복사 후 `sha256sum -c`가 모두 OK인지, run 수(shard pair 수 × 2: 206-40 70 run, 206-39 68 run)가 맞는지 확인한다. 그 뒤에야 원본 PC의 데이터를 지울지 정한다(지우는 것은 사람이 결정한다).
 - `incidents/*.yaml`은 각 PC의 `collect-<pc이름>` 브랜치에 commit·push한다. 파일 이름이 run ID라 겹치지 않으므로 206-40에서 merge한다.
 
 ## 시간·용량 산정

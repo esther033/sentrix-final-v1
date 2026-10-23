@@ -1,0 +1,36 @@
+{
+  "profile_name": "linux-v1-control-pod-currencyservice-r01",
+  "run_role": "control",
+  "campaign_id": "linux-v1",
+  "pair_id": "linux-v1-pod-currencyservice-r01",
+  "repetition": 1,
+  "cv_group": "repetition-1",
+  "schedule_index": 34,
+  "onset_offset_seconds": 420,
+  "pair_order": "control_then_fault",
+  "workload_seed": 2105343671,
+  "calibration_status": "frozen",
+  "target_rps": 2.4,
+  "time_unit": "1s",
+  "duration": "25m",
+  "warmup_seconds": 180,
+  "baseline_seconds": 240,
+  "fault_seconds": 300,
+  "recovery_seconds": 660,
+  "cooldown_seconds": 120,
+  "traffic_phase_rps": {
+    "warmup": 2.4,
+    "baseline": 2.4,
+    "fault": 2.4,
+    "recovery": 2.4,
+    "cooldown": 2.4
+  },
+  "pre_allocated_vus": 15,
+  "max_vus": 80,
+  "stage_timeout": "5s",
+  "trace_workers": 2,
+  "sham": {
+    "fault_type": "pod_failure",
+    "target_id": "currencyservice"
+  }
+}

@@ -91,12 +91,19 @@ class ShardTests(unittest.TestCase):
                 self.assertLess(max(reps.values()), len(doc['pairs']) * 0.6, (seed, reps))
 
     def test_two_pcs_also_balanced(self):
-        _, schedule, _ = self.docs[1]
-        shards = campaign_shard.assign(schedule['pairs'], ['206-40', 'pc-b'])
-        self.assertEqual(sorted(len(v) for v in shards.values()), [34, 35])
-        for t in {p['fault_type'] for p in schedule['pairs']}:
-            counts = [sum(p['fault_type'] == t for p in v) for v in shards.values()]
-            self.assertLessEqual(max(counts) - min(counts), 2)
+        for seed in self.docs:
+            _, schedule, _ = self.docs[seed]
+            shards = campaign_shard.assign(schedule['pairs'], ['206-40', '206-39'])
+            self.assertEqual(sorted(len(v) for v in shards.values()), [34, 35])
+            for t in {p['fault_type'] for p in schedule['pairs']}:
+                counts = [sum(p['fault_type'] == t for p in v) for v in shards.values()]
+                self.assertLessEqual(max(counts) - min(counts), 2)
+                self.assertGreater(min(counts), 0)          # both PCs get every fault type
+            for v in shards.values():                       # PC not confounded with pair order
+                orders = Counter(p['pair_order'] for p in v)
+                self.assertLessEqual(abs(orders['control_then_fault'] - orders['fault_then_control']), 3, seed)
+            cells = Counter((p['fault_type'], p['target_id'], n) for n, v in shards.items() for p in v)
+            self.assertEqual(set(cells.values()), {1, 2})     # every cell's 3 repetitions split 2/1
 
     def test_schedule_order_kept_and_schedule_pinned(self):
         path, schedule, shards = self.docs[1]
@@ -124,7 +131,7 @@ class ShardTests(unittest.TestCase):
         path, _, shards = self.docs[1]
         shard = self._write(shards['pc-b'])
         with patch.object(campaign, 'environment_id', return_value='206-40'):
-            with self.assertRaisesRegex(SystemExit, "for host 'pc-b'"):
+            with self.assertRaisesRegex(SystemExit, "for PC 'pc-b'"):
                 campaign.main(['--schedule', str(path), '--shard', str(shard), '--allow-draft'])
 
     def test_names_must_be_distinct(self):
@@ -132,6 +139,8 @@ class ShardTests(unittest.TestCase):
             campaign_shard.assign([], ['a', 'a'])
         with self.assertRaises(ValueError):
             campaign_shard.assign([], ['bad/name'])
+        with self.assertRaises(ValueError):   # shard names follow the environment ID rule
+            campaign_shard.assign([], ['D'])
 
     def _write(self, doc):
         p = Path(self.tmp.name, f"shard-{doc['shard']}-{doc['seed']}.json")
@@ -140,8 +149,46 @@ class ShardTests(unittest.TestCase):
 
 
 class EnvironmentIdTests(unittest.TestCase):
-    def test_environment_id_is_hostname(self):
-        self.assertEqual(host_state.environment_id(), socket.gethostname())
+    """SENTRIX_ENVIRONMENT_ID > linux/config/local.env > hostname; [a-z0-9-] only."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.local = Path(self.tmp.name, 'local.env')
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def env_id(self, environ=None, hostname='206-40'):
+        return host_state.environment_id(environ or {}, self.local, lambda: hostname)
+
+    def test_hostname_when_nothing_set(self):
+        self.assertEqual(self.env_id(), '206-40')
+        self.assertEqual(host_state.environment_id({}, self.local), socket.gethostname())
+
+    def test_local_env_over_hostname_and_variable_over_both(self):
+        self.local.write_text('# comment\nOTHER=x\nexport SENTRIX_ENVIRONMENT_ID="206-39"\n', encoding='utf-8')
+        self.assertEqual(self.env_id(hostname='D'), '206-39')
+        self.assertEqual(self.env_id({'SENTRIX_ENVIRONMENT_ID': '206-38'}, hostname='D'), '206-38')
+
+    def test_invalid_ids_refused(self):
+        with self.assertRaisesRegex(ValueError, "'D' from hostname"):
+            self.env_id(hostname='D')            # 206-39 without local.env
+        for bad in ('206_39', '206-39 ', 'pc.b', '-a', 'a--b', 'PC-B'):
+            with self.assertRaises(ValueError, msg=bad):
+                self.env_id({'SENTRIX_ENVIRONMENT_ID': bad})
+        self.local.write_text('SENTRIX_ENVIRONMENT_ID=Bad\n', encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'local.env'):
+            self.env_id()
+
+    def test_example_file_valid_format(self):
+        example = host_state.local_env(ROOT / 'linux/config/local.env.example')
+        self.assertIn('SENTRIX_ENVIRONMENT_ID', example)
+        self.assertIn('linux/config/local.env', (ROOT / '.gitignore').read_text(encoding='utf-8').splitlines())
+
+    def test_run_attended_records_the_id(self):
+        text = (ROOT / 'scripts/run-attended.py').read_text(encoding='utf-8')
+        self.assertIn('"environment_id":env_id', text)
+        self.assertLess(text.index('env_id = environment_id()'), text.index('run_dir.mkdir()'))
 
 
 if __name__ == '__main__':

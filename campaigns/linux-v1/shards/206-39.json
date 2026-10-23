@@ -1,0 +1,342 @@
+{
+  "schema_version": 1,
+  "campaign_id": "linux-v1",
+  "seed": 20261023,
+  "draft": false,
+  "schedule": "campaigns/linux-v1/schedule.json",
+  "schedule_sha256": "d7fd8332135312282dda63d97fc03afbb3ffad93f077c1cd77705189c8d1787f",
+  "shard": "206-39",
+  "shards": [
+    "206-40",
+    "206-39"
+  ],
+  "method": "round-robin in schedule order, balancing cell, fault type, pair order, total, repetition",
+  "summary": {
+    "pairs": 34,
+    "fault_type": {
+      "cpu_saturation": 7,
+      "network_delay": 8,
+      "packet_loss": 7,
+      "pod_failure": 8,
+      "traffic_surge": 4
+    },
+    "repetition": {
+      "1": 11,
+      "2": 13,
+      "3": 10
+    },
+    "pair_order": {
+      "control_then_fault": 17,
+      "fault_then_control": 17
+    },
+    "targets": 23
+  },
+  "pairs": [
+    {
+      "schedule_index": 2,
+      "pair_id": "linux-v1-delay-checkout-payment-r02",
+      "fault_type": "network_delay",
+      "target_id": "checkout-payment",
+      "repetition": 2,
+      "fault_run_id": "linux-v1-delay-checkout-payment-r02",
+      "control_run_id": "linux-v1-control-delay-checkout-payment-r02"
+    },
+    {
+      "schedule_index": 3,
+      "pair_id": "linux-v1-surge-l2-r01",
+      "fault_type": "traffic_surge",
+      "target_id": "l2",
+      "repetition": 1,
+      "fault_run_id": "linux-v1-surge-l2-r01",
+      "control_run_id": "linux-v1-control-surge-l2-r01"
+    },
+    {
+      "schedule_index": 5,
+      "pair_id": "linux-v1-loss-front-currency-r02",
+      "fault_type": "packet_loss",
+      "target_id": "front-currency",
+      "repetition": 2,
+      "fault_run_id": "linux-v1-loss-front-currency-r02",
+      "control_run_id": "linux-v1-control-loss-front-currency-r02"
+    },
+    {
+      "schedule_index": 7,
+      "pair_id": "linux-v1-pod-recommendationservice-r01",
+      "fault_type": "pod_failure",
+      "target_id": "recommendationservice",
+      "repetition": 1,
+      "fault_run_id": "linux-v1-pod-recommendationservice-r01",
+      "control_run_id": "linux-v1-control-pod-recommendationservice-r01"
+    },
+    {
+      "schedule_index": 9,
+      "pair_id": "linux-v1-cpu-paymentservice-r01",
+      "fault_type": "cpu_saturation",
+      "target_id": "paymentservice",
+      "repetition": 1,
+      "fault_run_id": "linux-v1-cpu-paymentservice-r01",
+      "control_run_id": "linux-v1-control-cpu-paymentservice-r01"
+    },
+    {
+      "schedule_index": 11,
+      "pair_id": "linux-v1-delay-recommendation-product-r01",
+      "fault_type": "network_delay",
+      "target_id": "recommendation-product",
+      "repetition": 1,
+      "fault_run_id": "linux-v1-delay-recommendation-product-r01",
+      "control_run_id": "linux-v1-control-delay-recommendation-product-r01"
+    },
+    {
+      "schedule_index": 13,
+      "pair_id": "linux-v1-delay-front-currency-r03",
+      "fault_type": "network_delay",
+      "target_id": "front-currency",
+      "repetition": 3,
+      "fault_run_id": "linux-v1-delay-front-currency-r03",
+      "control_run_id": "linux-v1-control-delay-front-currency-r03"
+    },
+    {
+      "schedule_index": 16,
+      "pair_id": "linux-v1-pod-paymentservice-r03",
+      "fault_type": "pod_failure",
+      "target_id": "paymentservice",
+      "repetition": 3,
+      "fault_run_id": "linux-v1-pod-paymentservice-r03",
+      "control_run_id": "linux-v1-control-pod-paymentservice-r03"
+    },
+    {
+      "schedule_index": 17,
+      "pair_id": "linux-v1-pod-currencyservice-r03",
+      "fault_type": "pod_failure",
+      "target_id": "currencyservice",
+      "repetition": 3,
+      "fault_run_id": "linux-v1-pod-currencyservice-r03",
+      "control_run_id": "linux-v1-control-pod-currencyservice-r03"
+    },
+    {
+      "schedule_index": 18,
+      "pair_id": "linux-v1-delay-front-product-r01",
+      "fault_type": "network_delay",
+      "target_id": "front-product",
+      "repetition": 1,
+      "fault_run_id": "linux-v1-delay-front-product-r01",
+      "control_run_id": "linux-v1-control-delay-front-product-r01"
+    },
+    {
+      "schedule_index": 21,
+      "pair_id": "linux-v1-cpu-productcatalogservice-r02",
+      "fault_type": "cpu_saturation",
+      "target_id": "productcatalogservice",
+      "repetition": 2,
+      "fault_run_id": "linux-v1-cpu-productcatalogservice-r02",
+      "control_run_id": "linux-v1-control-cpu-productcatalogservice-r02"
+    },
+    {
+      "schedule_index": 22,
+      "pair_id": "linux-v1-pod-checkoutservice-r03",
+      "fault_type": "pod_failure",
+      "target_id": "checkoutservice",
+      "repetition": 3,
+      "fault_run_id": "linux-v1-pod-checkoutservice-r03",
+      "control_run_id": "linux-v1-control-pod-checkoutservice-r03"
+    },
+    {
+      "schedule_index": 26,
+      "pair_id": "linux-v1-loss-checkout-payment-r02",
+      "fault_type": "packet_loss",
+      "target_id": "checkout-payment",
+      "repetition": 2,
+      "fault_run_id": "linux-v1-loss-checkout-payment-r02",
+      "control_run_id": "linux-v1-control-loss-checkout-payment-r02"
+    },
+    {
+      "schedule_index": 27,
+      "pair_id": "linux-v1-delay-front-recommendation-r01",
+      "fault_type": "network_delay",
+      "target_id": "front-recommendation",
+      "repetition": 1,
+      "fault_run_id": "linux-v1-delay-front-recommendation-r01",
+      "control_run_id": "linux-v1-control-delay-front-recommendation-r01"
+    },
+    {
+      "schedule_index": 30,
+      "pair_id": "linux-v1-cpu-recommendationservice-r01",
+      "fault_type": "cpu_saturation",
+      "target_id": "recommendationservice",
+      "repetition": 1,
+      "fault_run_id": "linux-v1-cpu-recommendationservice-r01",
+      "control_run_id": "linux-v1-control-cpu-recommendationservice-r01"
+    },
+    {
+      "schedule_index": 31,
+      "pair_id": "linux-v1-delay-front-product-r03",
+      "fault_type": "network_delay",
+      "target_id": "front-product",
+      "repetition": 3,
+      "fault_run_id": "linux-v1-delay-front-product-r03",
+      "control_run_id": "linux-v1-control-delay-front-product-r03"
+    },
+    {
+      "schedule_index": 35,
+      "pair_id": "linux-v1-loss-front-product-r02",
+      "fault_type": "packet_loss",
+      "target_id": "front-product",
+      "repetition": 2,
+      "fault_run_id": "linux-v1-loss-front-product-r02",
+      "control_run_id": "linux-v1-control-loss-front-product-r02"
+    },
+    {
+      "schedule_index": 36,
+      "pair_id": "linux-v1-surge-l1-r03",
+      "fault_type": "traffic_surge",
+      "target_id": "l1",
+      "repetition": 3,
+      "fault_run_id": "linux-v1-surge-l1-r03",
+      "control_run_id": "linux-v1-control-surge-l1-r03"
+    },
+    {
+      "schedule_index": 38,
+      "pair_id": "linux-v1-pod-currencyservice-r02",
+      "fault_type": "pod_failure",
+      "target_id": "currencyservice",
+      "repetition": 2,
+      "fault_run_id": "linux-v1-pod-currencyservice-r02",
+      "control_run_id": "linux-v1-control-pod-currencyservice-r02"
+    },
+    {
+      "schedule_index": 40,
+      "pair_id": "linux-v1-loss-front-recommendation-r02",
+      "fault_type": "packet_loss",
+      "target_id": "front-recommendation",
+      "repetition": 2,
+      "fault_run_id": "linux-v1-loss-front-recommendation-r02",
+      "control_run_id": "linux-v1-control-loss-front-recommendation-r02"
+    },
+    {
+      "schedule_index": 42,
+      "pair_id": "linux-v1-surge-l3-r02",
+      "fault_type": "traffic_surge",
+      "target_id": "l3",
+      "repetition": 2,
+      "fault_run_id": "linux-v1-surge-l3-r02",
+      "control_run_id": "linux-v1-control-surge-l3-r02"
+    },
+    {
+      "schedule_index": 43,
+      "pair_id": "linux-v1-delay-front-currency-r01",
+      "fault_type": "network_delay",
+      "target_id": "front-currency",
+      "repetition": 1,
+      "fault_run_id": "linux-v1-delay-front-currency-r01",
+      "control_run_id": "linux-v1-control-delay-front-currency-r01"
+    },
+    {
+      "schedule_index": 45,
+      "pair_id": "linux-v1-loss-recommendation-product-r03",
+      "fault_type": "packet_loss",
+      "target_id": "recommendation-product",
+      "repetition": 3,
+      "fault_run_id": "linux-v1-loss-recommendation-product-r03",
+      "control_run_id": "linux-v1-control-loss-recommendation-product-r03"
+    },
+    {
+      "schedule_index": 47,
+      "pair_id": "linux-v1-cpu-paymentservice-r02",
+      "fault_type": "cpu_saturation",
+      "target_id": "paymentservice",
+      "repetition": 2,
+      "fault_run_id": "linux-v1-cpu-paymentservice-r02",
+      "control_run_id": "linux-v1-control-cpu-paymentservice-r02"
+    },
+    {
+      "schedule_index": 49,
+      "pair_id": "linux-v1-cpu-currencyservice-r01",
+      "fault_type": "cpu_saturation",
+      "target_id": "currencyservice",
+      "repetition": 1,
+      "fault_run_id": "linux-v1-cpu-currencyservice-r01",
+      "control_run_id": "linux-v1-control-cpu-currencyservice-r01"
+    },
+    {
+      "schedule_index": 51,
+      "pair_id": "linux-v1-cpu-checkoutservice-r03",
+      "fault_type": "cpu_saturation",
+      "target_id": "checkoutservice",
+      "repetition": 3,
+      "fault_run_id": "linux-v1-cpu-checkoutservice-r03",
+      "control_run_id": "linux-v1-control-cpu-checkoutservice-r03"
+    },
+    {
+      "schedule_index": 53,
+      "pair_id": "linux-v1-pod-productcatalogservice-r02",
+      "fault_type": "pod_failure",
+      "target_id": "productcatalogservice",
+      "repetition": 2,
+      "fault_run_id": "linux-v1-pod-productcatalogservice-r02",
+      "control_run_id": "linux-v1-control-pod-productcatalogservice-r02"
+    },
+    {
+      "schedule_index": 58,
+      "pair_id": "linux-v1-loss-front-recommendation-r03",
+      "fault_type": "packet_loss",
+      "target_id": "front-recommendation",
+      "repetition": 3,
+      "fault_run_id": "linux-v1-loss-front-recommendation-r03",
+      "control_run_id": "linux-v1-control-loss-front-recommendation-r03"
+    },
+    {
+      "schedule_index": 60,
+      "pair_id": "linux-v1-pod-paymentservice-r01",
+      "fault_type": "pod_failure",
+      "target_id": "paymentservice",
+      "repetition": 1,
+      "fault_run_id": "linux-v1-pod-paymentservice-r01",
+      "control_run_id": "linux-v1-control-pod-paymentservice-r01"
+    },
+    {
+      "schedule_index": 61,
+      "pair_id": "linux-v1-loss-recommendation-product-r02",
+      "fault_type": "packet_loss",
+      "target_id": "recommendation-product",
+      "repetition": 2,
+      "fault_run_id": "linux-v1-loss-recommendation-product-r02",
+      "control_run_id": "linux-v1-control-loss-recommendation-product-r02"
+    },
+    {
+      "schedule_index": 62,
+      "pair_id": "linux-v1-surge-l1-r02",
+      "fault_type": "traffic_surge",
+      "target_id": "l1",
+      "repetition": 2,
+      "fault_run_id": "linux-v1-surge-l1-r02",
+      "control_run_id": "linux-v1-control-surge-l1-r02"
+    },
+    {
+      "schedule_index": 63,
+      "pair_id": "linux-v1-cpu-checkoutservice-r01",
+      "fault_type": "cpu_saturation",
+      "target_id": "checkoutservice",
+      "repetition": 1,
+      "fault_run_id": "linux-v1-cpu-checkoutservice-r01",
+      "control_run_id": "linux-v1-control-cpu-checkoutservice-r01"
+    },
+    {
+      "schedule_index": 66,
+      "pair_id": "linux-v1-pod-productcatalogservice-r03",
+      "fault_type": "pod_failure",
+      "target_id": "productcatalogservice",
+      "repetition": 3,
+      "fault_run_id": "linux-v1-pod-productcatalogservice-r03",
+      "control_run_id": "linux-v1-control-pod-productcatalogservice-r03"
+    },
+    {
+      "schedule_index": 67,
+      "pair_id": "linux-v1-delay-recommendation-product-r02",
+      "fault_type": "network_delay",
+      "target_id": "recommendation-product",
+      "repetition": 2,
+      "fault_run_id": "linux-v1-delay-recommendation-product-r02",
+      "control_run_id": "linux-v1-control-delay-recommendation-product-r02"
+    }
+  ]
+}

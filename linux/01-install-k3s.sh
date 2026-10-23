@@ -5,10 +5,18 @@
 #   services are exposed as fixed NodePorts by 04-deploy-stack.sh)
 # - sch_netem loaded now and at boot (NetworkChaos delay/loss)
 # - inotify limits raised (OTel filelog + many pods)
+# - node name = the PC's environment ID when one is set (SENTRIX_ENVIRONMENT_ID
+#   or linux/config/local.env), else k3s's default (the hostname)
 # Re-running is safe: an existing k3s of the same version is left alone.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/config/versions.env"
+if [ -z "${SENTRIX_ENVIRONMENT_ID:-}" ] && [ -f "$HERE/config/local.env" ]; then
+  SENTRIX_ENVIRONMENT_ID="$(sed -n 's/^[[:space:]]*\(export[[:space:]]\+\)\?SENTRIX_ENVIRONMENT_ID=["'"'"']\?\([^"'"'"' ]*\).*/\2/p' "$HERE/config/local.env" | tail -1)"
+fi
+if [ -n "${SENTRIX_ENVIRONMENT_ID:-}" ]; then
+  SENTRIX_ENVIRONMENT_ID="$SENTRIX_ENVIRONMENT_ID" python3 "$HERE/../scripts/host_state.py" >/dev/null || exit 1   # same validation as run records
+fi
 
 if command -v k3s >/dev/null 2>&1; then
   have="$(k3s --version | awk 'NR==1 {print $3}')"
@@ -20,6 +28,7 @@ if command -v k3s >/dev/null 2>&1; then
 else
   EXTRA=""
   if awk 'NR>1 {found=1} END {exit !found}' /proc/swaps; then EXTRA="--kubelet-arg=fail-swap-on=false"; fi
+  if [ -n "${SENTRIX_ENVIRONMENT_ID:-}" ]; then EXTRA="$EXTRA --node-name $SENTRIX_ENVIRONMENT_ID"; fi
   curl -sfL https://get.k3s.io | sudo env INSTALL_K3S_VERSION="$K3S_VERSION" \
     INSTALL_K3S_EXEC="server --disable traefik --disable servicelb --write-kubeconfig-mode 600 $EXTRA" sh -
 fi
@@ -54,5 +63,8 @@ chmod 755 "$HOME/.local/bin/kubectl"
 echo "Waiting for the node to be Ready..."
 "$HOME/.local/bin/kubectl" wait --for=condition=Ready node --all --timeout=180s
 "$HOME/.local/bin/kubectl" get nodes -o wide
+if [ -n "${SENTRIX_ENVIRONMENT_ID:-}" ] && ! "$HOME/.local/bin/kubectl" get node "$SENTRIX_ENVIRONMENT_ID" >/dev/null 2>&1; then
+  echo "WARNING: no k3s node named $SENTRIX_ENVIRONMENT_ID (k3s was installed before the ID was set?)" >&2
+fi
 echo "containerd socket for Chaos Mesh: /run/k3s/containerd/containerd.sock"
 sudo test -S /run/k3s/containerd/containerd.sock && echo "  present" || { echo "  MISSING: fix linux/values/chaos-mesh-k3s.yaml socketPath" >&2; exit 1; }

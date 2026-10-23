@@ -18,8 +18,8 @@
 | 수집 준비 | S2. 스택 배포·검증 | 완료 | 10/16 |
 | 수집 준비 | S3. 장애 주입 검증 (capability) | 완료 | 10/16 |
 | 수집 준비 | S4. 처리 용량 C 측정 | 완료 (C = 6 tx/s) | 10/16~19 |
-| 수집 준비 | **S5. 시험 pair 4개 + 2차 3개** | **진행 중** (loss 해결, 강도 동결 대기) | 10/19~22 |
-| 수집 준비 | S6. 강도 동결·정식 스케줄 | 남음 | 10/20~21 |
+| 수집 준비 | **S5. 시험 pair 4개 + 2차 3개** | 완료 | 10/19~22 |
+| 수집 준비 | S6. 강도 동결·정식 스케줄 | 완료 (seed 20261023, 태그 linux-v1-frozen-20261023) | 10/23 |
 | 수집 | S7. 첫 정식 pair | 남음 | 10/21 |
 | 수집 | S8. Tier 1 (cpu·delay·loss 45 pair) | 남음 | 10/21~11/2 |
 | 수집 | S9. Tier 2 (pod 15 pair) | 남음 | 11/3~11/5 |
@@ -148,13 +148,22 @@
 - 강도 승인(10/22, 동결 전): cpu worker 4 / load 100, delay 100 ms / jitter 10 ms, pod-failure 그대로, surge 0.8/1.0/1.33C.
 - loss 진단(7.17, 10/22): 커널 7.0 netem이 상관 loss(`loss 2% 25%`)에서 하나도 버리지 않았다. 템플릿 correlation을 0으로 바꿨다. capability에 netem drop 검사를 추가했다(corr 25면 FAIL, 수정 후 PASS). run-attended가 fault-record에 출발 pod의 tc·ipset·nstat 증거를 남긴다.
 - 3차(`calib3-linux-v1-loss-front-product-r02`): complete/valid. drop 2.04 %, 재전송 +997, frontend→productcatalog p99 0.8 → 205 ms, 사용자 p50/p99 35/129 → 104/521 ms(impacted). 2 % 유지, 5 % 제안 없음.
-- 남은 일: 강도 동결·정식 스케줄·shard(S6, 지시 대기).
+- S6로 넘어감(10/23).
 
 ---
 
 ## 남은 마일스톤
 
-### S6. 강도 동결·정식 스케줄 (10/20~21, 약 1시간)
+### S6. 강도 동결·정식 스케줄 — 완료 (10/23, SETUP-REVIEW 7.18)
+
+- delay correlation 0, capability network 재검사 PASS(지연 99.9 ms, jitter 표준편차 5.7 ms).
+- 수집 ID(SENTRIX_ENVIRONMENT_ID > local.env > hostname), 저장소 `seNNTRIX/sentrix-collection`, NEW-PC·README 2대 기준.
+- fault-params frozen(capacity 6, cpu 4/100, delay 100/10/corr 0, loss 2/corr 0, pod 그대로, surge 0.8/1.0/1.33C), redis·loki-gateway digest 고정.
+- seed 20261023, 69 pair, shard 206-40 35 / 206-39 34(pair order 균형 추가), 태그 `linux-v1-frozen-20261023`.
+
+아래는 원래 계획이다.
+
+#### S6 계획 (10/20~21, 약 1시간)
 
 - 사람이 강도 승인 → `campaigns/linux-v1/fault-params.yaml`에 capacity 6, 강도, calibration 근거 run ID 기록, `status: frozen`.
 - 템플릿에 하드코딩된 강도(CPU worker·load 등)를 params로 받게 수정 + 테스트.

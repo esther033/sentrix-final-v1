@@ -23,9 +23,10 @@ Daily blocks on a shared, often rebooted machine (206-40):
   offset right after a boot).
 
 Parallel collection on several PCs (linux/README.md "병렬 수집"):
-* --shard campaigns/<id>/shards/<hostname>.json runs only that PC's pairs
+* --shard campaigns/<id>/shards/<environment id>.json runs only that PC's pairs
   (scripts/shard-campaign.py). The shard must pin this exact schedule.json
-  (SHA-256) and be named after this host (host_state.environment_id), so a PC
+  (SHA-256) and be named after this PC's environment ID (host_state.environment_id:
+  SENTRIX_ENVIRONMENT_ID > linux/config/local.env > hostname), so a PC
   cannot run another PC's pairs by mistake.
 """
 import argparse
@@ -142,7 +143,7 @@ def main(argv=None):
     ap.add_argument("--pair-minutes", type=int, default=95, help="expected pair duration for --stop-before")
     ap.add_argument("--min-free-gib", type=float, default=20,
                     help="stop before a pair when runs/ or the k3s data dir has less free space")
-    ap.add_argument("--shard", help="campaigns/<id>/shards/<hostname>.json: run only this PC's pairs")
+    ap.add_argument("--shard", help="campaigns/<id>/shards/<environment id>.json: run only this PC's pairs")
     ap.add_argument("--allow-draft", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
@@ -151,14 +152,19 @@ def main(argv=None):
     if schedule.get("draft") and not args.allow_draft and not args.dry_run:
         raise SystemExit("Schedule was generated from draft parameters; freeze fault-params.yaml and regenerate "
                          "(or pass --allow-draft for a rehearsal that is NOT part of the formal corpus).")
+    try:
+        env_id = environment_id()
+    except ValueError as e:
+        raise SystemExit(f"run-campaign: {e}")
     shard_name, shard_ids = None, None
     if args.shard:
         try:
             shard_name, shard_ids = load_shard(args.shard, args.schedule, schedule)
         except ValueError as e:
             raise SystemExit(f"--shard {args.shard}: {e}")
-        if shard_name != environment_id() and not args.dry_run:
-            raise SystemExit(f"--shard {args.shard} is for host {shard_name!r}, this host is {environment_id()!r}")
+        if shard_name != env_id and not args.dry_run:
+            raise SystemExit(f"--shard {args.shard} is for PC {shard_name!r}, this PC's environment id is {env_id!r} "
+                             "(SENTRIX_ENVIRONMENT_ID / linux/config/local.env / hostname)")
     state_dir = ROOT / "runs" / "_campaign" / campaign
     state_dir.mkdir(parents=True, exist_ok=True)
     decisions_path = state_dir / "decisions.yaml"
@@ -177,7 +183,7 @@ def main(argv=None):
 
         if args.fault_types or deadline or shard_name:
             note(f"block: fault types={args.fault_types or 'all'} stop-before={deadline.isoformat() if deadline else None} "
-                 f"shard={shard_name} host={environment_id()} pairs selected={len(pairs)}")
+                 f"shard={shard_name} host={env_id} pairs selected={len(pairs)}")
         return run_queue(args, pairs, excluded, state_dir, deadline, note)
 
 

@@ -82,7 +82,7 @@ RE2-OB ↔ linux-v1 공통 표현:
 | 차트 | Loki 7.3.0, Tempo 1.24.4, Prometheus 29.30.0, OTel Collector 0.173.1, Chaos Mesh 2.7.2 (`linux/charts/`에 digest 확인 후 캐시) |
 | 엔드포인트 | frontend :30080, Prometheus :30090, Tempo :30320, Loki :30310 (NodePort, port-forward 불필요) |
 | scrape | 5초, 보존 12h |
-| git | 저장소 `esther033/sentrix-final-v1`(비공개), 학교 PC 작업 브랜치 `school-pc`, 단계마다 commit·push |
+| git | 저장소 `seNNTRIX/sentrix-collection`(비공개, 옛 `esther033/sentrix-final-v1`), 학교 PC 작업 브랜치 `school-pc`, 단계마다 commit·push |
 
 ## 5. 실험 프로토콜
 

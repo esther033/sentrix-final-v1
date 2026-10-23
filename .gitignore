@@ -1,5 +1,7 @@
 # Machine-local helper (contains an absolute local path to helm.exe)
 scripts/helm-path.sh
+# Machine-local collection PC ID (template: linux/config/local.env.example)
+linux/config/local.env
 
 # Scratch/dev-only runs (prefixed smoke-dev- or similar); real M1A/M1B runs
 # under runs/<run_id>/ ARE tracked -- raw export is the reproducibility

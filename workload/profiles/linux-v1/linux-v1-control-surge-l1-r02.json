@@ -1,0 +1,36 @@
+{
+  "profile_name": "linux-v1-control-surge-l1-r02",
+  "run_role": "control",
+  "campaign_id": "linux-v1",
+  "pair_id": "linux-v1-surge-l1-r02",
+  "repetition": 2,
+  "cv_group": "repetition-2",
+  "schedule_index": 62,
+  "onset_offset_seconds": 540,
+  "pair_order": "control_then_fault",
+  "workload_seed": 294951051,
+  "calibration_status": "frozen",
+  "target_rps": 2.4,
+  "time_unit": "1s",
+  "duration": "25m",
+  "warmup_seconds": 180,
+  "baseline_seconds": 360,
+  "fault_seconds": 300,
+  "recovery_seconds": 540,
+  "cooldown_seconds": 120,
+  "traffic_phase_rps": {
+    "warmup": 2.4,
+    "baseline": 2.4,
+    "fault": 2.4,
+    "recovery": 2.4,
+    "cooldown": 2.4
+  },
+  "pre_allocated_vus": 15,
+  "max_vus": 202,
+  "stage_timeout": "5s",
+  "trace_workers": 2,
+  "sham": {
+    "fault_type": "traffic_surge",
+    "target_id": "l1"
+  }
+}

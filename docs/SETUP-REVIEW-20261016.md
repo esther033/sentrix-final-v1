@@ -68,7 +68,7 @@
 대상 PC: 206-40 (Ubuntu 24.04.5, i7-13700 24 vCPU, RAM 15 GiB + swap 4 GiB, HDD 931.5G에 LVM ext4 단일 파티션 — `/`·`/var`·`/home` 공유, 여유 847 GiB, NVMe에는 Windows). 0단계 증거: `linux/out/preflight-206-40-20261016T052659Z/` (수정 전), 수정 후 재실행: `linux/out/preflight-206-40-20261016T054655Z/`. 이 절의 변경은 **코드·문서만** 고쳤고 sudo·k3s 설치·배포는 아직 하지 않았다.
 
 ### 7.1 저장소
-- 받은 폴더는 GitHub ZIP(`.git` 없음)이었다. `esther033/sentrix-final-v1`을 clone해 `diff -rq`로 내용이 완전히 같음을 확인한 뒤 그 `.git`을 이 폴더에 붙이고 `school-pc` 브랜치를 만들었다. 이유: 실습 PC 자리를 옮겨도 작업을 잃지 않게 단계마다 push하기 위해.
+- 받은 폴더는 GitHub ZIP(`.git` 없음)이었다. `esther033/sentrix-final-v1`(현 `seNNTRIX/sentrix-collection`)을 clone해 `diff -rq`로 내용이 완전히 같음을 확인한 뒤 그 `.git`을 이 폴더에 붙이고 `school-pc` 브랜치를 만들었다. 이유: 실습 PC 자리를 옮겨도 작업을 잃지 않게 단계마다 push하기 위해.
 
 ### 7.2 preflight 버그 (`linux/00-preflight.sh`)
 | 문제 | 실측 | 수정 |
@@ -440,3 +440,58 @@ queue는 `campaigns/calib2-linux-v1/schedule.json --allow-draft --stop-before 21
   - success 100 %, incident status `recovered`.
   - 손실된 요청은 TLP/RTO(약 200 ms)로 회복된다. 페이지 하나의 직렬 호출 약 30번 중 하나에 걸리면 페이지가 느려진다.
 - **결론: 2 %가 적용됐고 사용자 영향도 임계를 넘는다. 따라서 5 %는 제안하지 않는다.** 강도 동결은 하지 않았다.
+
+### 7.18 정식 수집 준비 — delay jitter, 수집 ID, 강도 동결, 정식 스케줄·shard (2026-10-23)
+
+**delay jitter correlation 0.**
+- `deploy/chaos-mesh/faults/network-delay.yaml`의 correlation을 "25"에서 "0"으로 바꿨다. 같은 커널의 netem 상관 처리 불량(7.17) 때문이다. delay pair 재시험은 하지 않았다.
+- capability Service 경로 delay는 이제 정식 값(100 ms / 10 ms)과 템플릿의 correlation을 쓴다.
+- 새 검사 두 개를 추가했다. 기준은 새 연결의 `time_connect`이다. SYN이 지연 hop을 한 번만 지나므로 표본 하나에 latency와 jitter가 한 번씩 들어간다.
+  - `svc_delay_latency_matches`: 추가 지연의 중앙값이 latency ± 15 ms 안에 있어야 한다.
+  - `svc_delay_jitter_matches`: 표준편차가 jitter의 0.25~1.5배 안에 있어야 한다.
+- 결과: `linux/out/capability-network-20261023T053747Z/` **전체 PASS**.
+  - 추가 connect 지연은 중앙값 **99.9 ms**, 표준편차 **5.7 ms**, p5–p95 92.7–109.6 ms(n 60)다. netem 균등분포 ±10 ms의 이론 표준편차는 5.8 ms이므로 설정과 맞는다.
+  - HTTP 요청 전체(새 연결이라 두 번 지남)는 dst_svc 1.3 → 202.8 ms, other_svc 1.0 → 1.3 ms, 제거 후 1.3 ms다.
+  - ping delay는 RTT 0.08 → 100.1 ms다. loss 10 %는 netem drop 10.61 %다.
+- 실수 기록: judge를 시험하다가 `linux/out/capability-20261022T071229Z/network/service-summary.json`을 잘못된 인자로 한 번 덮어썼다. 같은 입력과 커밋 e9ac6b8의 judge.py로 다시 만들었고 결과는 같다(전체 PASS, drop 9.64 %). 같은 폴더에 NOTE 파일을 남겼다.
+
+**수집 ID(environment ID).**
+- 우선순위는 환경변수 `SENTRIX_ENVIRONMENT_ID` > `linux/config/local.env` > hostname이다. 소문자·숫자·하이픈만 허용하고, 아니면 거부한다(`scripts/host_state.py`).
+- `local.env`는 `.gitignore`에 넣었다. 예시는 `linux/config/local.env.example`이다.
+- 이 ID를 쓰는 곳:
+  - shard 이름 규칙
+  - `run-campaign --shard` 확인
+  - run 기록의 `environment_id`. run-attended가 run 폴더를 만들기 전에 확인한다.
+  - `start.sh`: tmux 세션에 export한다.
+  - `01-install-k3s.sh`: ID가 있으면 `--node-name <ID>`를 쓰고, 노드 이름이 다르면 WARNING을 낸다.
+- 206-40: `local.env`에 `SENTRIX_ENVIRONMENT_ID=206-40`을 두었다. hostname, k3s 노드 이름, calib3 run 기록의 environment_id와 모두 같다.
+- 206-39: hostname이 `D`라 hostname만으로는 거부된다. local.env가 필요하다(k3s 노드는 이미 206-39).
+- 저장소 주소는 `seNNTRIX/sentrix-collection`으로 바꿨다. NEW-PC.md와 README 8절은 2대 기준으로 고치고 local.env 단계를 넣었다.
+
+**강도 동결 (`campaigns/linux-v1/fault-params.yaml`, status frozen).**
+- capacity_tps 6, baseline 0.4C = 2.4 tx/s, surge 0.8 / 1.0 / 1.33C(4.8 / 6 / 8 tx/s).
+- cpu WORKERS 4 / LOAD 100, delay 100 ms / jitter 10 ms / correlation 0, loss 2 % / correlation 0, pod-failure는 기존 그대로.
+- correlation은 템플릿에 고정된 값이라 `template_fixed`로 적었다. 테스트가 템플릿 값과 같은지 확인한다.
+- `calibration_evidence`에 fault별 근거 run ID, capacity 결과 경로, capability 증거 경로를 적었다.
+- 가변 태그 이미지 고정(실행 중이던 digest):
+  - `redis:alpine@sha256:38117873…`(`deploy/linux/online-boutique` kustomize images)
+  - loki-gateway `nginx-unprivileged:1.29-alpine` → `@sha256:0c79d56a…`(`linux/values/loki-linux.yaml`)
+  - 나머지는 고정 버전 태그다. loadgenerator의 init `busybox:latest`는 replicas 0이라 실행되지 않으므로 그대로 두었다.
+- 적용은 `04-deploy-stack.sh`와 `05-verify.sh`로 했다.
+  - 첫 시도에서 loki helm upgrade가 30분 timeout으로 실패했다(rev 2 failed). 새 gateway pod가 chart의 required pod anti-affinity 때문에 단일 노드에서 Pending이었기 때문이다(RollingUpdate). 스크립트가 NodePort patch 전에 멈춰서 loki 30310도 잠시 끊겼다.
+  - `gateway.deploymentStrategy.type: Recreate`를 `loki-linux.yaml`에 넣고 다시 돌렸다. rev 3 deployed, 05-verify 전체 PASS다(`linux/out/deploy-20261023T061630Z/`).
+  - 이제 두 Deployment의 spec image는 digest다. imageID는 이전과 같아서 실제 이미지는 바뀌지 않았다. redis-cart와 loki-gateway pod만 새로 떴다.
+
+**정식 스케줄과 shard.**
+- 정식 seed는 **20261023**(동결일)이다. `--dry-run` 뒤 생성했다: 69 pair / 138 profile, draft false, baseline 2.4 tx/s, control_then_fault 34 / fault_then_control 35.
+- `schedule.json` sha256은 `d7fd8332…1787f`다.
+- shard는 `--pc 206-40 --pc 206-39`로 만들었다.
+- 처음 배정에서는 206-40이 fault-first 23/35, 206-39가 control-first 22/34였다. PC와 pair 순서가 섞이는 문제라서 배정 우선순위에 pair order를 넣었다. 순서는 셀 > fault 종류 > pair order > 총수 > 반복이다.
+
+| shard | pair | cpu / delay / loss / pod / surge | 반복 1/2/3 | ctf / ftc | 셀 |
+|---|---|---|---|---|---|
+| 206-40 | 35 | 8 / 7 / 8 / 7 / 5 | 12 / 10 / 13 | 17 / 18 | 23 |
+| 206-39 | 34 | 7 / 8 / 7 / 8 / 4 | 11 / 13 / 10 | 17 / 17 | 23 |
+
+- 69 pair는 모두 정확히 한 shard에만 있다. 23개 셀의 반복 3개는 모두 두 PC에 2/1로 갈라진다. 두 PC 모두 모든 fault 종류를 받는다.
+- 고정 태그는 `linux-v1-frozen-20261023`이다. 206-40은 이 태그 시점의 school-pc에서 `start.sh --shard campaigns/linux-v1/shards/206-40.json`으로 수집을 시작한다(종료 시각 제한 없음).
